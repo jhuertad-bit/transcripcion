@@ -1,0 +1,5 @@
+{
+  "recording_id": "counter_000123",
+  "audio_uri": "gs://YOUR_COUNTER_INPUT_BUCKET/path/audio.m4a",
+  "force": false
+}

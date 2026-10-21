@@ -1,0 +1,51 @@
+# Contexto por defecto: repositorio padre. Desde esta carpeta usar _SOURCE_DIR=.
+substitutions:
+  _SOURCE_DIR: 'counter_audio_transcription'
+  _PROJECT_ID: ''
+  _LOCATION: ''
+  _REPOSITORY: ''
+  _SERVICE_ACCOUNT: ''
+  _ALLOWED_INPUT_BUCKETS: ''
+  _OUTPUT_GCS_ROOT: ''
+  _JOB_NAME: 'prd-utpbi-counter-audio-transcripcion'
+  _HF_SECRET: 'counter-hf-token'
+  _HF_SECRET_VERSION: '1'
+  _CPU: '4'
+  _MEMORY: '16Gi'
+  _TASK_TIMEOUT: '7200s'
+steps:
+  - id: validate
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args: ['${_SOURCE_DIR}/scripts/cloudbuild_deploy.sh', 'validate']
+    env: &deploy_env
+      - '_SOURCE_DIR=${_SOURCE_DIR}'
+      - '_PROJECT_ID=${_PROJECT_ID}'
+      - '_LOCATION=${_LOCATION}'
+      - '_REPOSITORY=${_REPOSITORY}'
+      - '_SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}'
+      - '_ALLOWED_INPUT_BUCKETS=${_ALLOWED_INPUT_BUCKETS}'
+      - '_OUTPUT_GCS_ROOT=${_OUTPUT_GCS_ROOT}'
+      - '_JOB_NAME=${_JOB_NAME}'
+      - '_HF_SECRET=${_HF_SECRET}'
+      - '_HF_SECRET_VERSION=${_HF_SECRET_VERSION}'
+      - '_CPU=${_CPU}'
+      - '_MEMORY=${_MEMORY}'
+      - '_TASK_TIMEOUT=${_TASK_TIMEOUT}'
+      - 'IMAGE_URI=${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/counter-audio-transcription:${BUILD_ID}'
+  - id: build
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', '${_SOURCE_DIR}/worker/Dockerfile', '-t', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/counter-audio-transcription:${BUILD_ID}', '${_SOURCE_DIR}']
+  - id: push
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/counter-audio-transcription:${BUILD_ID}']
+  - id: deploy
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args: ['${_SOURCE_DIR}/scripts/cloudbuild_deploy.sh', 'deploy']
+    env: *deploy_env
+images:
+  - '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/counter-audio-transcription:${BUILD_ID}'
+timeout: '3600s'
+options:
+  logging: CLOUD_LOGGING_ONLY

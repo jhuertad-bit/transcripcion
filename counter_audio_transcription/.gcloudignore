@@ -1,0 +1,11 @@
+.git/
+.venv/
+**/__pycache__/
+credentials/
+models/
+outputs/
+**/*.local.yaml
+.env
+
+# Audios de prueba: se cargan en GCS, no en Git ni en la imagen.
+samples/audios/

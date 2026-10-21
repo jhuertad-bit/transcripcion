@@ -1,0 +1,4 @@
+# Dependencias exclusivas de la función HTTP. No instala los modelos de audio.
+functions-framework>=3.8,<4
+google-auth>=2.35,<3
+requests>=2.32,<3
