@@ -34,7 +34,8 @@ def package_versions():
 
 
 def run(repository, request, config, sink=None, max_seconds=7200,
-        normalize_audio=normalize, transcribe_audio=transcribe, diarize_audio=diarize):
+        normalize_audio=normalize, transcribe_audio=transcribe, diarize_audio=diarize,
+        catalog_metadata=None):
     key = processing_key(request, repository.source, config)
     attempt = uuid.uuid4().hex
     started, t0 = utc_now(), time.monotonic()
@@ -44,6 +45,8 @@ def run(repository, request, config, sink=None, max_seconds=7200,
             result = repository.read_json(key, previous["result_path"])
             if result is None:
                 raise RuntimeError("Manifest completo sin resultado; revisar integridad o usar force")
+            if catalog_metadata:
+                result["catalog"] = catalog_metadata
             if sink:
                 sink.write(result, previous["result_uri"])
             repository.write_json(key, "status.json", {"status": "completed", "processing_key": key,
@@ -72,7 +75,7 @@ def run(repository, request, config, sink=None, max_seconds=7200,
                       "timestamp_gaps": asr["timestamp_gaps"],
                       "warnings": ["Speaker IDs válidos solo dentro de esta grabación; role no inferido.",
                                    "Diarización no separa fuentes ni garantiza recuperar frases simultáneas."],
-                      "serialized_level_1": to_text(segments)}
+                      "serialized_level_1": to_text(segments), "catalog": catalog_metadata}
             json_path, text_path = f"attempts/{attempt}/result.json", f"attempts/{attempt}/transcript.txt"
             result_uri = repository.write_json(key, json_path, result, immutable=True)
             text_uri = repository.write_text(key, text_path, result["serialized_level_1"])

@@ -18,7 +18,9 @@ class BigQuerySink:
                   "result_uri": result_uri, "pipeline_version": result["models"]["pipeline_version"],
                   "duration_seconds": result["duration_seconds"], "elapsed_seconds": result["elapsed_seconds"],
                   "processed_at": result["processed_at"], "serialized_level_1": result["serialized_level_1"],
-                  "serialized_level_2": json.dumps({"transcription": result["transcription"]}, ensure_ascii=False)}
+                  "serialized_level_2": json.dumps({"transcription": result["transcription"],
+                                                     "catalog": result.get("catalog"),
+                                                     "speaker_scope": "segment", "timestamp_scope": "segment"}, ensure_ascii=False)}
         types = {"duration_seconds": "FLOAT64", "elapsed_seconds": "FLOAT64", "processed_at": "TIMESTAMP"}
         fields = list(values)
         select = ", ".join((f"PARSE_JSON(@{f})" if f == "serialized_level_2" else f"@{f}") + f" AS {f}" for f in fields)

@@ -36,3 +36,11 @@ No se ejecutaron comandos de creación/despliegue ni se crearon objetos en GCP. 
 El paquete es una implementación inicial para validar; estas pruebas locales no certifican un despliegue ni sustituyen el piloto de audio.
 
 Referencias: [Community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [Jobs v2](https://docs.cloud.google.com/run/docs/reference/rest/v2/projects.locations.jobs/run), [matriz TorchCodec](https://github.com/pytorch/torchcodec#compatibility-with-torch-versions).
+
+
+## Actualización 27/10/2026: catálogo y lotes
+
+- 23 pruebas locales aprobadas, con E/S/modelos simulados; incluye relación entre segmentos, validación de manifiesto y configuración, selección de pendientes antes del límite, y persistencia de metadatos.
+- Validación AST de todos los archivos Python.
+- Cloud Build incorpora las pruebas antes del build Docker y despliega también el Workflow prepare/worker.
+- No se ejecutaron Cloud Build, despliegues ni inferencia real. La compilación semántica de Workflows, ejecución del script Bash, resolución de dependencias y acceso real a BigQuery/GCS siguen pendientes en GCP. No hay parser YAML disponible en el runtime local utilizado.

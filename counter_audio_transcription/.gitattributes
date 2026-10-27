@@ -1,0 +1,2 @@
+# Los scripts se ejecutan en Linux mediante el activador de Cloud Build.
+*.sh text eol=lf

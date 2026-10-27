@@ -13,6 +13,17 @@ substitutions:
   _CPU: '4'
   _MEMORY: '16Gi'
   _TASK_TIMEOUT: '7200s'
+  _BQ_SOURCE_TABLE: 'prd-utpbi-data-operation.raw_queue_smart.queuesmart_mp3_catalog'
+  _BQ_SOURCE_LOCATION: ''
+  _BQ_RESULTS_TABLE: ''
+  _BQ_LOCATION: ''
+  _MANIFEST_GCS_ROOT: ''
+  _BATCH_MAX_FILES: '100'
+  _PROCESS_DAY_FROM: ''
+  _PROCESS_DAY_TO: ''
+  _PARALLELISM: '2'
+  _WORKFLOW_NAME: 'prd-utpbi-counter-audio-pipeline'
+  _WORKFLOW_SERVICE_ACCOUNT: ''
 steps:
   - id: validate
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -32,7 +43,24 @@ steps:
       - '_CPU=${_CPU}'
       - '_MEMORY=${_MEMORY}'
       - '_TASK_TIMEOUT=${_TASK_TIMEOUT}'
+      - '_BQ_SOURCE_TABLE=${_BQ_SOURCE_TABLE}'
+      - '_BQ_SOURCE_LOCATION=${_BQ_SOURCE_LOCATION}'
+      - '_BQ_RESULTS_TABLE=${_BQ_RESULTS_TABLE}'
+      - '_BQ_LOCATION=${_BQ_LOCATION}'
+      - '_MANIFEST_GCS_ROOT=${_MANIFEST_GCS_ROOT}'
+      - '_BATCH_MAX_FILES=${_BATCH_MAX_FILES}'
+      - '_PROCESS_DAY_FROM=${_PROCESS_DAY_FROM}'
+      - '_PROCESS_DAY_TO=${_PROCESS_DAY_TO}'
+      - '_PARALLELISM=${_PARALLELISM}'
+      - '_WORKFLOW_NAME=${_WORKFLOW_NAME}'
+      - '_WORKFLOW_SERVICE_ACCOUNT=${_WORKFLOW_SERVICE_ACCOUNT}'
       - 'IMAGE_URI=${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/counter-audio-transcription:${BUILD_ID}'
+  - id: tests
+    name: 'python:3.11-slim-bookworm'
+    entrypoint: python
+    args:
+      - '-c'
+      - 'import os, unittest, sys; os.chdir("${_SOURCE_DIR}"); sys.path.insert(0, os.getcwd()); sys.exit(not unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover("tests")).wasSuccessful())'
   - id: build
     name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-f', '${_SOURCE_DIR}/worker/Dockerfile', '-t', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/counter-audio-transcription:${BUILD_ID}', '${_SOURCE_DIR}']

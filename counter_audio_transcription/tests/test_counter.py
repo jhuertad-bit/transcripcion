@@ -146,6 +146,13 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.execute()["status"], "already_completed")
         self.assertEqual(self.repo.downloads, 1)
 
+    def test_segment_catalog_is_preserved_in_result(self):
+        catalog = {"original_recording_id": "original", "segment_index": 2, "speaker_scope": "segment"}
+        self.execute(catalog_metadata=catalog)
+        completed = self.repo.read_json(self.key, "completed.json")
+        result = self.repo.read_json(self.key, completed["result_path"])
+        self.assertEqual(result["catalog"], catalog)
+
     def test_failure_preserves_previous_result(self):
         self.execute()
         previous = self.repo.read_json(self.key, "completed.json")
