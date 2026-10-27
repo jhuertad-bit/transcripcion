@@ -12,6 +12,16 @@ El activador usa `counter_audio_transcription/cloudbuild.yaml` y `_SOURCE_DIR=co
 
 Cloud Build valida parámetros, construye y publica la imagen, despliega el Cloud Run Job y despliega Workflows. No ejecuta audios, crea tablas, asigna IAM ni programa Scheduler. La función HTTP individual continúa siendo opcional y no se despliega desde este flujo.
 
+## Piloto de solo transcripción (versión 0.2.0)
+
+Agregar al activador `_ENABLE_DIARIZATION=false`, `_BATCH_MAX_FILES=1` y `_PARALLELISM=1`. Luego hacer commit y push de esta entrega. El build despliega; ejecutar el Workflow con `{}` inicia el procesamiento de un archivo pendiente.
+
+Con diarización desactivada no se exige que exista counter-hf-token ni se descarga/carga el modelo Pyannote. El despliegue retira únicamente la referencia HF_TOKEN del Job Counter si estaba configurada, sin borrar el secreto en Secret Manager. Puedes conservar _HF_SECRET y _HF_SECRET_VERSION en el activador: no se utilizan en este modo. La imagen sigue incluyendo las dependencias de ambos modos para permitir activación posterior.
+
+Las salidas conservan texto y tiempos, speaker_id=null, diarization=null y diarization_status=disabled. No se infieren hablantes, roles ni solapamientos. El TXT presenta tiempos y texto sin etiquetas de hablante. El cambio de modo forma parte de la clave de procesamiento, por lo que activar diarización después produce resultados separados.
+
+Para activar diarización posteriormente: `_ENABLE_DIARIZATION=true`, completar secreto/versión existentes y permisos, y volver a desplegar desde Git.
+
 ## Sustituciones
 
 | Parámetro | Valor / propósito |
@@ -32,7 +42,8 @@ Cloud Build valida parámetros, construye y publica la imagen, despliega el Clou
 | `_PROCESS_DAY_FROM`, `_PROCESS_DAY_TO` | Fechas inclusivas YYYY-MM-DD; vacías revisan todo el catálogo |
 | `_PARALLELISM` | Máximo de tareas concurrentes por ejecución; inicial `2` |
 | `_JOB_NAME`, `_WORKFLOW_NAME` | Nombres configurables de los recursos |
-| `_HF_SECRET`, `_HF_SECRET_VERSION` | Secreto existente autorizado para Pyannote; no poner el token en Git |
+| `_ENABLE_DIARIZATION` | `false` para solo transcribir; `true` para transcribir y diarizar |
+| `_HF_SECRET`, `_HF_SECRET_VERSION` | Solo requeridos cuando _ENABLE_DIARIZATION=true; no poner el token en Git |
 | `_CPU`, `_MEMORY`, `_TASK_TIMEOUT` | Iniciales: 4, 16Gi, 7200s por tarea |
 
 Los modelos y sus umbrales permanecen configurables en `config/job.env.example.yaml`; no hace falta duplicarlos en las sustituciones. No se leen archivos `*.local.yaml` en Cloud Build.

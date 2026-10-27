@@ -59,10 +59,11 @@ def group_words(words, max_gap=1.0):
         segment["words"].append(word)
         # Whisper conserva espacios iniciales: no insertar espacios antes de puntuación.
         segment["text"] = "".join(w["word"] for w in segment["words"]).strip()
-        segment["overlapping_speech"] |= word["overlapping_speech"]
+        segment["overlapping_speech"] |= bool(word["overlapping_speech"])
     return segments
 
 
 def to_text(segments):
     return "\n".join(f"[{s['start']:.3f}–{s['end']:.3f}] "
-                     f"{s['speaker_id'] or 'HABLANTE_DESCONOCIDO'}: {s['text']}" for s in segments)
+                     + ("" if s['assignment_status'] == 'diarization_disabled' else f"{s['speaker_id'] or 'HABLANTE_DESCONOCIDO'}: ")
+                     + s['text'] for s in segments)

@@ -1,6 +1,7 @@
 # Contexto por defecto: repositorio padre. Desde esta carpeta usar _SOURCE_DIR=.
 substitutions:
   _SOURCE_DIR: 'counter_audio_transcription'
+  _ENABLE_DIARIZATION: 'false'
   _PROJECT_ID: ''
   _LOCATION: ''
   _REPOSITORY: ''
@@ -31,6 +32,7 @@ steps:
     args: ['${_SOURCE_DIR}/scripts/cloudbuild_deploy.sh', 'validate']
     env: &deploy_env
       - '_SOURCE_DIR=${_SOURCE_DIR}'
+      - '_ENABLE_DIARIZATION=${_ENABLE_DIARIZATION}'
       - '_PROJECT_ID=${_PROJECT_ID}'
       - '_LOCATION=${_LOCATION}'
       - '_REPOSITORY=${_REPOSITORY}'

@@ -153,6 +153,26 @@ class PipelineTests(unittest.TestCase):
         result = self.repo.read_json(self.key, completed["result_path"])
         self.assertEqual(result["catalog"], catalog)
 
+    def test_transcription_only_never_calls_diarization(self):
+        self.config = ModelConfig(enable_diarization=False)
+        def forbidden(*args):
+            raise AssertionError("No se debe invocar Pyannote")
+        outcome = self.execute(diarize_audio=forbidden)
+        key = outcome["processing_key"]
+        completed = self.repo.read_json(key, "completed.json")
+        result = self.repo.read_json(key, completed["result_path"])
+        self.assertEqual(result["diarization_status"], "disabled")
+        self.assertIsNone(result["diarization"])
+        self.assertIsNone(result["transcription"][0]["speaker_id"])
+        self.assertIsNone(result["transcription"][0]["overlapping_speech"])
+        self.assertIn("Hola", result["serialized_level_1"])
+        self.assertNotIn("HABLANTE", result["serialized_level_1"])
+        self.assertNotEqual(key, self.key)
+
+    @patch.dict(os.environ, {"ENABLE_DIARIZATION": "false"})
+    def test_diarization_switch_from_environment(self):
+        self.assertFalse(ModelConfig.from_env().enable_diarization)
+
     def test_failure_preserves_previous_result(self):
         self.execute()
         previous = self.repo.read_json(self.key, "completed.json")

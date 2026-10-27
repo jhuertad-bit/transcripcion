@@ -20,6 +20,7 @@ class BigQuerySink:
                   "processed_at": result["processed_at"], "serialized_level_1": result["serialized_level_1"],
                   "serialized_level_2": json.dumps({"transcription": result["transcription"],
                                                      "catalog": result.get("catalog"),
+                                                     "diarization_status": result.get("diarization_status"),
                                                      "speaker_scope": "segment", "timestamp_scope": "segment"}, ensure_ascii=False)}
         types = {"duration_seconds": "FLOAT64", "elapsed_seconds": "FLOAT64", "processed_at": "TIMESTAMP"}
         fields = list(values)

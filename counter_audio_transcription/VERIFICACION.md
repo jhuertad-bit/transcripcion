@@ -44,3 +44,8 @@ Referencias: [Community-1](https://huggingface.co/pyannote/speaker-diarization-c
 - Validación AST de todos los archivos Python.
 - Cloud Build incorpora las pruebas antes del build Docker y despliega también el Workflow prepare/worker.
 - No se ejecutaron Cloud Build, despliegues ni inferencia real. La compilación semántica de Workflows, ejecución del script Bash, resolución de dependencias y acceso real a BigQuery/GCS siguen pendientes en GCP. No hay parser YAML disponible en el runtime local utilizado.
+
+
+## Versión 0.2.0: solo transcripción
+
+25 pruebas locales aprobadas con modelos/E/S simulados. Se verifica omisión de la llamada a diarización, texto sin etiquetas de hablantes, tiempos conservados, estado disabled y clave diferente al cambiar de modo. Validación AST Python. No se ejecutaron build, despliegue ni inferencia real; la validación Bash/Workflows en GCP continúa pendiente.

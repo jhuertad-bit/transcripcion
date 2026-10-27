@@ -1,3 +1,5 @@
+> Versión 0.2.0: el despliegue usa `_ENABLE_DIARIZATION=false` por defecto para probar Whisper sin token de Hugging Face. Para el primer archivo configura `_BATCH_MAX_FILES=1` y `_PARALLELISM=1`. Véase DEPLOY_TRIGGER.md. Pyannote y su secreto son requeridos solamente al activar diarización.
+
 > Actualización 27/10/2026: se incorporó lectura de queuesmart_mp3_catalog y flujo prepare → manifiesto → workers por segmento. Cloud Build ahora despliega también Workflows. La configuración vigente y sus parámetros están en [DEPLOY_TRIGGER.md](DEPLOY_TRIGGER.md). Las restricciones de una tarea por ejecución descritas abajo aplican al modo individual; el modo worker admite una tarea por segmento. Los resultados mantienen la relación con el original en catalog. No se ha desplegado ni ejecutado inferencia real.
 
 # counter_audio_transcription: transcripciÃ³n y diarizaciÃ³n de audios Counter

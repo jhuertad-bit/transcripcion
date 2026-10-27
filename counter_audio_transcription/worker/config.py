@@ -10,6 +10,7 @@ def boolean(value):
 
 @dataclass(frozen=True)
 class ModelConfig:
+    enable_diarization: bool = True
     whisper_model: str = "deepdml/faster-whisper-large-v3-turbo-ct2"
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     device: str = "cpu"
@@ -20,7 +21,7 @@ class ModelConfig:
     max_speakers: int = 6
     min_overlap_ratio: float = 0.5
     ambiguity_margin: float = 0.1
-    pipeline_version: str = "counter-v0.1.0"
+    pipeline_version: str = "counter-v0.2.0"
 
     def __post_init__(self):
         if not 1 <= self.min_speakers <= self.max_speakers:
@@ -31,6 +32,7 @@ class ModelConfig:
     @classmethod
     def from_env(cls):
         return cls(**{name: cast(os.environ[env]) for name, env, cast in [
+            ("enable_diarization", "ENABLE_DIARIZATION", boolean),
             ("whisper_model", "WHISPER_MODEL", str), ("diarization_model", "DIARIZATION_MODEL", str),
             ("device", "MODEL_DEVICE", str), ("compute_type", "WHISPER_COMPUTE_TYPE", str),
             ("language", "LANGUAGE", str), ("initial_prompt", "INITIAL_PROMPT", str),

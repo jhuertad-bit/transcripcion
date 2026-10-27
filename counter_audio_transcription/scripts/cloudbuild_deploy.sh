@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
-for name in _PROJECT_ID _LOCATION _REPOSITORY _SERVICE_ACCOUNT _ALLOWED_INPUT_BUCKETS _OUTPUT_GCS_ROOT _JOB_NAME _HF_SECRET _HF_SECRET_VERSION _CPU _MEMORY _TASK_TIMEOUT _BQ_SOURCE_TABLE _BQ_SOURCE_LOCATION _MANIFEST_GCS_ROOT _BATCH_MAX_FILES _PARALLELISM _WORKFLOW_NAME _WORKFLOW_SERVICE_ACCOUNT; do
+for name in _PROJECT_ID _LOCATION _REPOSITORY _SERVICE_ACCOUNT _ALLOWED_INPUT_BUCKETS _OUTPUT_GCS_ROOT _JOB_NAME _CPU _MEMORY _TASK_TIMEOUT _BQ_SOURCE_TABLE _BQ_SOURCE_LOCATION _MANIFEST_GCS_ROOT _BATCH_MAX_FILES _PARALLELISM _WORKFLOW_NAME _WORKFLOW_SERVICE_ACCOUNT; do
   value="${!name:-}"
   if [[ -z "${value//[[:space:]]/}" || "$value" == *YOUR_* ]]; then
     echo "ERROR: completar ${name} en Cloud Build." >&2
     exit 1
   fi
 done
+case "${_ENABLE_DIARIZATION:-}" in
+  false) secret_args=(--remove-secrets=HF_TOKEN) ;;
+  true)
+    if [[ -z "${_HF_SECRET:-}" || -z "${_HF_SECRET_VERSION:-}" ]]; then
+      echo 'ERROR: completar secreto HF y versión para diarización.' >&2
+      exit 1
+    fi
+    secret_args=("--update-secrets=HF_TOKEN=${_HF_SECRET}:${_HF_SECRET_VERSION}") ;;
+  *) echo 'ERROR: _ENABLE_DIARIZATION debe ser true o false.' >&2; exit 1 ;;
+esac
 if [[ "${_SERVICE_ACCOUNT}" != *@*.iam.gserviceaccount.com || "${_OUTPUT_GCS_ROOT}" != gs://*/* ]]; then
   echo 'ERROR: revisar cuenta de servicio y URI de salida con prefijo.' >&2
   exit 1
@@ -43,6 +53,7 @@ values = {
     'GCP_PROJECT': os.environ['_PROJECT_ID'],
     'ALLOWED_INPUT_BUCKETS': os.environ['_ALLOWED_INPUT_BUCKETS'],
     'OUTPUT_GCS_ROOT': os.environ['_OUTPUT_GCS_ROOT'],
+    'ENABLE_DIARIZATION': os.environ['_ENABLE_DIARIZATION'],
 }
 for key in ('BQ_SOURCE_TABLE', 'BQ_SOURCE_LOCATION', 'BQ_RESULTS_TABLE', 'BQ_LOCATION', 'MANIFEST_GCS_ROOT', 'BATCH_MAX_FILES', 'PROCESS_DAY_FROM', 'PROCESS_DAY_TO'):
     values[key] = os.environ['_' + key]
@@ -64,7 +75,7 @@ gcloud run jobs deploy "${_JOB_NAME}" \
   --project="${_PROJECT_ID}" --region="${_LOCATION}" \
   --image="${IMAGE_URI}" --service-account="${_SERVICE_ACCOUNT}" \
   --env-vars-file="$env_file" \
-  --set-secrets="HF_TOKEN=${_HF_SECRET}:${_HF_SECRET_VERSION}" \
+  "${secret_args[@]}" \
   --cpu="${_CPU}" --memory="${_MEMORY}" \
   --task-timeout="${_TASK_TIMEOUT}" --tasks=1 --parallelism="${_PARALLELISM}" --max-retries=0 --quiet
 

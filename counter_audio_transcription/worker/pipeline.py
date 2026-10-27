@@ -61,20 +61,29 @@ def run(repository, request, config, sink=None, max_seconds=7200,
                 repository.download(source)
                 duration = normalize_audio(source, wav, max_seconds=max_seconds)
                 asr = transcribe_audio(wav, config)
-                turns = diarize_audio(wav, config)
+                turns = diarize_audio(wav, config) if config.enable_diarization else {"regular": [], "exclusive": []}
                 assigned = assign_words(asr["words"], turns["exclusive"], turns["regular"],
                                         config.min_overlap_ratio, config.ambiguity_margin)
+                if not config.enable_diarization:
+                    for word in assigned:
+                        word.update(assignment_status="diarization_disabled", overlapping_speech=None,
+                                    assignment_overlap_ratio=None)
                 segments = group_words(assigned)
+                if not config.enable_diarization:
+                    for segment in segments:
+                        segment["overlapping_speech"] = None
             result = {"schema_version": "1.0", "processing_key": key, "attempt_id": attempt,
                       "recording_id": request.recording_id, "source_system": "counter",
                       "source": repository.source, "processed_at": utc_now(),
                       "duration_seconds": duration, "elapsed_seconds": round(time.monotonic()-t0, 3),
                       "models": config.as_dict(), "packages": package_versions(),
                       "language": asr["language"], "language_probability": asr["language_probability"],
-                      "transcription": segments, "diarization": turns,
+                      "transcription": segments, "diarization": turns if config.enable_diarization else None,
+                      "diarization_status": "completed" if config.enable_diarization else "disabled",
                       "timestamp_gaps": asr["timestamp_gaps"],
-                      "warnings": ["Speaker IDs válidos solo dentro de esta grabación; role no inferido.",
-                                   "Diarización no separa fuentes ni garantiza recuperar frases simultáneas."],
+                      "warnings": (["Speaker IDs válidos solo dentro de esta grabación; role no inferido.",
+                                   "Diarización no separa fuentes ni garantiza recuperar frases simultáneas."]
+                                   if config.enable_diarization else ["Solo transcripción: sin identificación de hablantes ni detección de solapamientos."]),
                       "serialized_level_1": to_text(segments), "catalog": catalog_metadata}
             json_path, text_path = f"attempts/{attempt}/result.json", f"attempts/{attempt}/transcript.txt"
             result_uri = repository.write_json(key, json_path, result, immutable=True)
