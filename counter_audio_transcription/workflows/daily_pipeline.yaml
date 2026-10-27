@@ -21,8 +21,8 @@ main:
                       value: prepare
                     - name: BATCH_ID
                       value: ${batch}
-        connector_params:
-          timeout: 14400
+          connector_params:
+            timeout: 14400
     - manifest_path:
         assign:
           - uri: ${root + "/" + batch + ".json"}
@@ -55,8 +55,8 @@ main:
                       value: worker
                     - name: MANIFEST_URI
                       value: ${uri}
-        connector_params:
-          timeout: 86400
+          connector_params:
+            timeout: 86400
         result: execution
     - done:
         return:
