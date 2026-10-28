@@ -48,7 +48,7 @@ main:
           name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job}
           body:
             overrides:
-              taskCount: ${manifest.body.count}
+              taskCount: ${manifest.body.task_count}
               containerOverrides:
                 - env:
                     - name: JOB_ROLE

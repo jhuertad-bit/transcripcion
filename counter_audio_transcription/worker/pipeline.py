@@ -56,12 +56,23 @@ def run(repository, request, config, sink=None, max_seconds=7200,
                   "source": repository.source, "started_at": started}
         repository.write_json(key, "status.json", {**status, "status": "processing"})
         try:
+            timings = {}
             with tempfile.TemporaryDirectory(prefix="counter-") as tmp:
                 source, wav = Path(tmp) / "input.audio", Path(tmp) / "normalized.wav"
+                stage = time.monotonic()
                 repository.download(source)
+                timings["download_seconds"] = round(time.monotonic() - stage, 3)
+                stage = time.monotonic()
                 duration = normalize_audio(source, wav, max_seconds=max_seconds)
+                timings["normalize_seconds"] = round(time.monotonic() - stage, 3)
+                stage = time.monotonic()
                 asr = transcribe_audio(wav, config)
+                timings["transcribe_seconds"] = round(time.monotonic() - stage, 3)
+                timings.update(asr.get("timings", {}))
+                stage = time.monotonic()
                 turns = diarize_audio(wav, config) if config.enable_diarization else {"regular": [], "exclusive": []}
+                timings["diarize_seconds"] = round(time.monotonic() - stage, 3)
+                stage = time.monotonic()
                 assigned = assign_words(asr["words"], turns["exclusive"], turns["regular"],
                                         config.min_overlap_ratio, config.ambiguity_margin)
                 if not config.enable_diarization:
@@ -72,10 +83,12 @@ def run(repository, request, config, sink=None, max_seconds=7200,
                 if not config.enable_diarization:
                     for segment in segments:
                         segment["overlapping_speech"] = None
+                timings["alignment_seconds"] = round(time.monotonic() - stage, 3)
             result = {"schema_version": "1.0", "processing_key": key, "attempt_id": attempt,
                       "recording_id": request.recording_id, "source_system": "counter",
                       "source": repository.source, "processed_at": utc_now(),
                       "duration_seconds": duration, "elapsed_seconds": round(time.monotonic()-t0, 3),
+                      "timings": timings, "whisper_model_reused": asr.get("model_reused", False),
                       "models": config.as_dict(), "packages": package_versions(),
                       "language": asr["language"], "language_probability": asr["language_probability"],
                       "transcription": segments, "diarization": turns if config.enable_diarization else None,
@@ -86,6 +99,7 @@ def run(repository, request, config, sink=None, max_seconds=7200,
                                    if config.enable_diarization else ["Solo transcripción: sin identificación de hablantes ni detección de solapamientos."]),
                       "serialized_level_1": to_text(segments), "catalog": catalog_metadata}
             json_path, text_path = f"attempts/{attempt}/result.json", f"attempts/{attempt}/transcript.txt"
+            stage = time.monotonic()
             result_uri = repository.write_json(key, json_path, result, immutable=True)
             text_uri = repository.write_text(key, text_path, result["serialized_level_1"])
             if sink:
@@ -94,7 +108,9 @@ def run(repository, request, config, sink=None, max_seconds=7200,
             repository.write_json(key, "completed.json", {"result_path": json_path, "result_uri": result_uri,
                                   "text_uri": text_uri, "attempt_id": attempt, "updated_at": utc_now()})
             repository.write_json(key, "status.json", {**status, "status": "completed",
-                                  "result_uri": result_uri, "updated_at": utc_now()})
+                                  "result_uri": result_uri, "updated_at": utc_now(),
+                                  "timings": {**timings, "publish_seconds": round(time.monotonic() - stage, 3)},
+                                  "total_worker_seconds": round(time.monotonic() - t0, 3)})
             return {"status": "completed", "processing_key": key, "result_uri": result_uri}
         except Exception as exc:
             try:

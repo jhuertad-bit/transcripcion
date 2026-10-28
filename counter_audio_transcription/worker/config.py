@@ -15,15 +15,18 @@ class ModelConfig:
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     device: str = "cpu"
     compute_type: str = "int8"
+    cpu_threads: int = 4
     language: str = "es"
     initial_prompt: str = "Atención presencial en español de Perú sobre carreras, admisión y matrícula universitaria."
     min_speakers: int = 1
     max_speakers: int = 6
     min_overlap_ratio: float = 0.5
     ambiguity_margin: float = 0.1
-    pipeline_version: str = "counter-v0.2.0"
+    pipeline_version: str = "counter-v0.3.0"
 
     def __post_init__(self):
+        if self.cpu_threads < 1:
+            raise ValueError("WHISPER_CPU_THREADS debe ser positivo")
         if not 1 <= self.min_speakers <= self.max_speakers:
             raise ValueError("Rango de hablantes inválido")
         if not 0 < self.min_overlap_ratio <= 1 or not 0 <= self.ambiguity_margin <= 1:
@@ -35,6 +38,7 @@ class ModelConfig:
             ("enable_diarization", "ENABLE_DIARIZATION", boolean),
             ("whisper_model", "WHISPER_MODEL", str), ("diarization_model", "DIARIZATION_MODEL", str),
             ("device", "MODEL_DEVICE", str), ("compute_type", "WHISPER_COMPUTE_TYPE", str),
+            ("cpu_threads", "WHISPER_CPU_THREADS", int),
             ("language", "LANGUAGE", str), ("initial_prompt", "INITIAL_PROMPT", str),
             ("min_speakers", "MIN_SPEAKERS", int), ("max_speakers", "MAX_SPEAKERS", int),
             ("min_overlap_ratio", "MIN_OVERLAP_RATIO", float),

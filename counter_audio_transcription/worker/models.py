@@ -1,10 +1,26 @@
 import os
-import gc
+import time
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
+def whisper_model(model_id, device, compute_type, cpu_threads):
+    from faster_whisper import WhisperModel
+    bundled = os.environ.get("BUNDLED_WHISPER_MODEL")
+    local = os.environ.get("WHISPER_LOCAL_PATH", "/opt/models/whisper")
+    use_local = model_id == bundled and os.path.isfile(os.path.join(local, "model.bin"))
+    return WhisperModel(local if use_local else model_id, device=device,
+                        compute_type=compute_type, cpu_threads=cpu_threads,
+                        local_files_only=use_local)
 
 
 def transcribe(path, config):
-    from faster_whisper import WhisperModel
-    model = WhisperModel(config.whisper_model, device=config.device, compute_type=config.compute_type)
+    started = time.monotonic()
+    hits = whisper_model.cache_info().hits
+    model = whisper_model(config.whisper_model, config.device, config.compute_type, config.cpu_threads)
+    load_seconds = time.monotonic() - started
+    reused = whisper_model.cache_info().hits > hits
+    started = time.monotonic()
     segments, info = model.transcribe(str(path), language=config.language, word_timestamps=True,
                                      vad_filter=True, initial_prompt=config.initial_prompt)
     words, timestamp_gaps = [], []
@@ -22,9 +38,10 @@ def transcribe(path, config):
             words.append({"word": word.word, "start": word.start, "end": word.end,
                           "asr_probability": word.probability})
     result = {"words": words, "timestamp_gaps": timestamp_gaps,
-              "language": info.language, "language_probability": info.language_probability}
-    del model
-    gc.collect()
+              "language": info.language, "language_probability": info.language_probability,
+              "timings": {"whisper_model_load_seconds": round(load_seconds, 3),
+                          "whisper_inference_seconds": round(time.monotonic() - started, 3)},
+              "model_reused": reused}
     return result
 
 

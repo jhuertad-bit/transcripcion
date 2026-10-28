@@ -1,4 +1,4 @@
-"""Catálogo Counter: un archivo por tarea; nunca concatena segmentos."""
+"""Catálogo Counter: varios archivos independientes por tarea; nunca concatena audios."""
 import hashlib
 import json
 import os
@@ -36,6 +36,9 @@ def prepare(storage_client, bq_client):
     if start and end and start > end:
         raise ValueError("Rango de fechas invertido")
     limit = int(os.environ.get("BATCH_MAX_FILES", "100"))
+    per_worker = int(os.environ.get("FILES_PER_WORKER", "5"))
+    if not 1 <= per_worker <= 100:
+        raise ValueError("FILES_PER_WORKER debe estar entre 1 y 100")
     if not 1 <= limit <= 10000:
         raise ValueError("BATCH_MAX_FILES debe estar entre 1 y 10000")
     filters, params = ["gcs_uri IS NOT NULL"], []
@@ -71,15 +74,17 @@ def prepare(storage_client, bq_client):
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", batch_id):
         raise ValueError("BATCH_ID inválido")
     name = f"{prefix.rstrip('/')}/{batch_id}.json"
-    payload = {"count": len(items), "source_table": source_table, "models": config.as_dict(), "items": items}
+    task_count = (len(items) + per_worker - 1) // per_worker
+    payload = {"count": len(items), "task_count": task_count, "files_per_worker": per_worker,
+               "source_table": source_table, "models": config.as_dict(), "items": items}
     storage_client.bucket(bucket).blob(name).upload_from_string(
         json.dumps(payload, ensure_ascii=False), content_type="application/json", if_generation_match=0)
     storage_client.bucket(bucket).blob(name + ".meta.json").upload_from_string(
-        json.dumps({"count": len(items)}), content_type="application/json", if_generation_match=0)
+        json.dumps({"count": len(items), "task_count": task_count}), content_type="application/json", if_generation_match=0)
     print(json.dumps({"manifest_uri": f"gs://{bucket}/{name}", "count": len(items)}))
 
 
-def read_item(client):
+def read_items(client):
     bucket, name = parse_gcs_uri(os.environ["MANIFEST_URI"])
     expected_bucket, expected_prefix = parse_gcs_uri(os.environ["MANIFEST_GCS_ROOT"].rstrip("/") + "/")
     if bucket != expected_bucket or not name.startswith(expected_prefix):
@@ -88,6 +93,22 @@ def read_item(client):
     if manifest["models"] != ModelConfig.from_env().as_dict():
         raise ValueError("Configuración de modelos cambió desde prepare; generar otro manifiesto")
     index = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
-    if int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1")) != manifest["count"]:
+    per_worker = manifest.get("files_per_worker", 1)
+    if not isinstance(per_worker, int) or not 1 <= per_worker <= 100:
+        raise ValueError("files_per_worker inválido en manifiesto")
+    expected_tasks = manifest.get("task_count", manifest["count"])
+    if manifest["count"] != len(manifest["items"]) or expected_tasks != (len(manifest["items"]) + per_worker - 1) // per_worker:
+        raise ValueError("Conteos inconsistentes en manifiesto")
+    if int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1")) != expected_tasks:
         raise ValueError("taskCount debe coincidir con el manifiesto")
-    return manifest["items"][index]
+    if not 0 <= index < expected_tasks:
+        raise ValueError("Índice de tarea fuera de rango")
+    return manifest["items"][index * per_worker:(index + 1) * per_worker]
+
+
+def read_item(client):
+    """Compatibilidad con consumidores del manifiesto de una URI por tarea."""
+    items = read_items(client)
+    if len(items) != 1:
+        raise ValueError("Este manifiesto requiere read_items")
+    return items[0]

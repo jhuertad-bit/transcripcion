@@ -2,6 +2,9 @@
 substitutions:
   _SOURCE_DIR: 'counter_audio_transcription'
   _ENABLE_DIARIZATION: 'false'
+  _FILES_PER_WORKER: '5'
+  _WHISPER_CPU_THREADS: '4'
+  _WHISPER_MODEL: 'deepdml/faster-whisper-large-v3-turbo-ct2'
   _PROJECT_ID: ''
   _LOCATION: ''
   _REPOSITORY: ''
@@ -33,6 +36,9 @@ steps:
     env: &deploy_env
       - '_SOURCE_DIR=${_SOURCE_DIR}'
       - '_ENABLE_DIARIZATION=${_ENABLE_DIARIZATION}'
+      - '_FILES_PER_WORKER=${_FILES_PER_WORKER}'
+      - '_WHISPER_CPU_THREADS=${_WHISPER_CPU_THREADS}'
+      - '_WHISPER_MODEL=${_WHISPER_MODEL}'
       - '_PROJECT_ID=${_PROJECT_ID}'
       - '_LOCATION=${_LOCATION}'
       - '_REPOSITORY=${_REPOSITORY}'
@@ -65,7 +71,7 @@ steps:
       - 'import os, unittest, sys; os.chdir("${_SOURCE_DIR}"); sys.path.insert(0, os.getcwd()); sys.exit(not unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover("tests")).wasSuccessful())'
   - id: build
     name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-f', '${_SOURCE_DIR}/worker/Dockerfile', '-t', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/counter-audio-transcription:${BUILD_ID}', '${_SOURCE_DIR}']
+    args: ['build', '--build-arg', 'WHISPER_MODEL=${_WHISPER_MODEL}', '-f', '${_SOURCE_DIR}/worker/Dockerfile', '-t', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/counter-audio-transcription:${BUILD_ID}', '${_SOURCE_DIR}']
   - id: push
     name: 'gcr.io/cloud-builders/docker'
     args: ['push', '${_LOCATION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/counter-audio-transcription:${BUILD_ID}']

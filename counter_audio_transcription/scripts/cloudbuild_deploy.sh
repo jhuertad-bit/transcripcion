@@ -7,6 +7,14 @@ for name in _PROJECT_ID _LOCATION _REPOSITORY _SERVICE_ACCOUNT _ALLOWED_INPUT_BU
     exit 1
   fi
 done
+if [[ ! "${_FILES_PER_WORKER}" =~ ^[1-9][0-9]*$ || ! "${_WHISPER_CPU_THREADS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo 'ERROR: FILES_PER_WORKER y WHISPER_CPU_THREADS deben ser positivos.' >&2
+  exit 1
+fi
+if (( _FILES_PER_WORKER > 100 || _WHISPER_CPU_THREADS > _CPU )); then
+  echo 'ERROR: maximo 100 archivos por worker; hilos Whisper no deben superar CPU.' >&2
+  exit 1
+fi
 case "${_ENABLE_DIARIZATION:-}" in
   false) secret_args=(--remove-secrets=HF_TOKEN) ;;
   true)
@@ -54,6 +62,9 @@ values = {
     'ALLOWED_INPUT_BUCKETS': os.environ['_ALLOWED_INPUT_BUCKETS'],
     'OUTPUT_GCS_ROOT': os.environ['_OUTPUT_GCS_ROOT'],
     'ENABLE_DIARIZATION': os.environ['_ENABLE_DIARIZATION'],
+    'FILES_PER_WORKER': os.environ['_FILES_PER_WORKER'],
+    'WHISPER_CPU_THREADS': os.environ['_WHISPER_CPU_THREADS'],
+    'WHISPER_MODEL': os.environ['_WHISPER_MODEL'],
 }
 for key in ('BQ_SOURCE_TABLE', 'BQ_SOURCE_LOCATION', 'BQ_RESULTS_TABLE', 'BQ_LOCATION', 'MANIFEST_GCS_ROOT', 'BATCH_MAX_FILES', 'PROCESS_DAY_FROM', 'PROCESS_DAY_TO'):
     values[key] = os.environ['_' + key]

@@ -49,3 +49,8 @@ Referencias: [Community-1](https://huggingface.co/pyannote/speaker-diarization-c
 ## Versión 0.2.0: solo transcripción
 
 25 pruebas locales aprobadas con modelos/E/S simulados. Se verifica omisión de la llamada a diarización, texto sin etiquetas de hablantes, tiempos conservados, estado disabled y clave diferente al cambiar de modo. Validación AST Python. No se ejecutaron build, despliegue ni inferencia real; la validación Bash/Workflows en GCP continúa pendiente.
+
+
+## v0.3.0: CPU optimization
+
+29 local tests pass with simulated I/O and models. New coverage: exact partition across tasks, continuation after individual failure, bundled model path, one model load for two files, cache invalidation on model change. All Python files parsed with AST. Cloud Build, actual bundled image import time, model inference, Workflows validation and performance measurement remain pending in GCP. No deployment or IAM change executed.
