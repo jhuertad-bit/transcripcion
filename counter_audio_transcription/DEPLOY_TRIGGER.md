@@ -1,3 +1,5 @@
+> Prueba de dos audios sin Secret Manager: ver [PRUEBA_DIARIZACION_MANUAL.md](PRUEBA_DIARIZACION_MANUAL.md).
+
 > v0.3.0: CPU optimization pilot. See [PILOTO_CPU_OPTIMIZADO.md](PILOTO_CPU_OPTIMIZADO.md) for the current batch behavior and isolated deployment settings. FILES_PER_WORKER controls files per task; each audio keeps independent outputs. Whisper is bundled and reused. No production deployment was executed by this change.
 
 # Counter: despliegue desde Git mediante Cloud Build

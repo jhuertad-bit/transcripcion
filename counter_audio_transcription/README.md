@@ -1,3 +1,5 @@
+> Prueba de dos audios sin Secret Manager: ver [PRUEBA_DIARIZACION_MANUAL.md](PRUEBA_DIARIZACION_MANUAL.md).
+
 > v0.3.0: CPU optimization pilot. See [PILOTO_CPU_OPTIMIZADO.md](PILOTO_CPU_OPTIMIZADO.md) for the current batch behavior and isolated deployment settings. FILES_PER_WORKER controls files per task; each audio keeps independent outputs. Whisper is bundled and reused. No production deployment was executed by this change.
 
 > Versión 0.2.0: el despliegue usa `_ENABLE_DIARIZATION=false` por defecto para probar Whisper sin token de Hugging Face. Para el primer archivo configura `_BATCH_MAX_FILES=1` y `_PARALLELISM=1`. Véase DEPLOY_TRIGGER.md. Pyannote y su secreto son requeridos solamente al activar diarización.

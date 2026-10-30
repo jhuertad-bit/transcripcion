@@ -18,11 +18,18 @@ fi
 case "${_ENABLE_DIARIZATION:-}" in
   false) secret_args=(--remove-secrets=HF_TOKEN) ;;
   true)
-    if [[ -z "${_HF_SECRET:-}" || -z "${_HF_SECRET_VERSION:-}" ]]; then
-      echo 'ERROR: completar secreto HF y versión para diarización.' >&2
-      exit 1
-    fi
-    secret_args=("--update-secrets=HF_TOKEN=${_HF_SECRET}:${_HF_SECRET_VERSION}") ;;
+    case "${_HF_TOKEN_SOURCE:-secret}" in
+      secret)
+        if [[ -z "${_HF_SECRET:-}" || -z "${_HF_SECRET_VERSION:-}" ]]; then
+          echo 'ERROR: completar secreto HF y versión para diarización.' >&2
+          exit 1
+        fi
+        secret_args=("--update-secrets=HF_TOKEN=${_HF_SECRET}:${_HF_SECRET_VERSION}") ;;
+      manual)
+        secret_args=(--remove-secrets=HF_TOKEN)
+        echo 'AVISO: agregar HF_TOKEN en Cloud Run despues de CADA despliegue y ANTES de ejecutar el Workflow.' >&2 ;;
+      *) echo 'ERROR: _HF_TOKEN_SOURCE debe ser secret o manual.' >&2; exit 1 ;;
+    esac ;;
   *) echo 'ERROR: _ENABLE_DIARIZATION debe ser true o false.' >&2; exit 1 ;;
 esac
 if [[ "${_SERVICE_ACCOUNT}" != *@*.iam.gserviceaccount.com || "${_OUTPUT_GCS_ROOT}" != gs://*/* ]]; then
