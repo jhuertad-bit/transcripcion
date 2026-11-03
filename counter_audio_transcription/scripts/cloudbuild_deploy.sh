@@ -70,9 +70,19 @@ case "${1:-}" in
   deploy) ;;
   *) echo 'Uso: cloudbuild_deploy.sh validate|deploy' >&2; exit 1 ;;
 esac
+# Algunas imagenes Cloud SDK solo incluyen Python dentro de la instalacion gcloud.
+python_bin="$(command -v python3 || command -v python || true)"
+if [[ -z "$python_bin" ]]; then
+  python_bin="$(gcloud info --format='value(basic.python_location)')"
+fi
+if [[ -z "$python_bin" || ! -x "$python_bin" ]]; then
+  echo 'ERROR: no se encontro un interprete Python utilizable en la imagen de despliegue.' >&2
+  exit 1
+fi
+"$python_bin" -c 'import sys; assert sys.version_info >= (3, 8), "Se requiere Python 3.8+"'
 env_file="$(mktemp)"
 trap 'rm -f "$env_file"' EXIT
-python3 - "${_SOURCE_DIR}/config/job.env.example.yaml" "$env_file" <<'PY'
+"$python_bin" - "${_SOURCE_DIR}/config/job.env.example.yaml" "$env_file" <<'PY'
 import json
 import os
 import sys
