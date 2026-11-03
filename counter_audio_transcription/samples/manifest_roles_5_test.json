@@ -1,0 +1,184 @@
+{
+  "count": 5,
+  "task_count": 5,
+  "files_per_worker": 1,
+  "source_table": "prd-utpbi-data-operation.raw_queue_smart.queuesmart_mp3_catalog",
+  "models": {
+    "enable_diarization": true,
+    "whisper_model": "deepdml/faster-whisper-large-v3-turbo-ct2",
+    "diarization_model": "pyannote/speaker-diarization-community-1",
+    "device": "cpu",
+    "compute_type": "int8",
+    "cpu_threads": 4,
+    "diarization_cpu_threads": 4,
+    "language": "es",
+    "initial_prompt": "Atención presencial en español de Perú sobre carreras, admisión y matrícula universitaria.",
+    "min_speakers": 1,
+    "max_speakers": 6,
+    "min_overlap_ratio": 0.5,
+    "ambiguity_margin": 0.1,
+    "pipeline_version": "counter-v0.3.0"
+  },
+  "items": [
+    {
+      "audio_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG1-20261031-093754_s01.flac",
+      "recording_id": "69999ea4d68e6030ecb1a464",
+      "catalog": {
+        "process_day": "2026-10-31",
+        "fecha_procesamiento": "2026-11-01 09:04:06+00:00",
+        "file_name": "015AG1-20261031-093754_s01.flac",
+        "source_file_name": "015AG1-20261031-093754.webm",
+        "gcs_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG1-20261031-093754_s01.flac",
+        "gcs_path": "queuesmart_mp3_s3/2026-10-31/015AG1-20261031-093754_s01.flac",
+        "campus_code": "015",
+        "type_code": "AG1",
+        "correlative": "093754",
+        "s3_uri": "s3://utp-a106-s3-prd-02-ticketero-counter/015AG1-20261031-093754.webm",
+        "s3_key": "015AG1-20261031-093754.webm",
+        "file_size_bytes": "36642791",
+        "sync_mode": "daily_yesterday",
+        "convert_method": "ffmpeg_flac_segment_1_of_2",
+        "load_date": "2026-11-02 04:02:06.775356",
+        "duration_seconds": "1083.4265",
+        "original_recording_id": "b64e76ebced283b4807837b4",
+        "segment_index": 1,
+        "speaker_scope": "segment",
+        "timestamp_scope": "segment",
+        "source_table": "prd-utpbi-data-operation.raw_queue_smart.queuesmart_mp3_catalog"
+      },
+      "source": {
+        "uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG1-20261031-093754_s01.flac",
+        "generation": "1793523881399787",
+        "size_bytes": 36642791
+      }
+    },
+    {
+      "audio_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG1-20261031-093754_s02.flac",
+      "recording_id": "0f3b70de7235dcfd45e1d195",
+      "catalog": {
+        "process_day": "2026-10-31",
+        "fecha_procesamiento": "2026-11-01 09:04:06+00:00",
+        "file_name": "015AG1-20261031-093754_s02.flac",
+        "source_file_name": "015AG1-20261031-093754.webm",
+        "gcs_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG1-20261031-093754_s02.flac",
+        "gcs_path": "queuesmart_mp3_s3/2026-10-31/015AG1-20261031-093754_s02.flac",
+        "campus_code": "015",
+        "type_code": "AG1",
+        "correlative": "093754",
+        "s3_uri": "s3://utp-a106-s3-prd-02-ticketero-counter/015AG1-20261031-093754.webm",
+        "s3_key": "015AG1-20261031-093754.webm",
+        "file_size_bytes": "10629036",
+        "sync_mode": "daily_yesterday",
+        "convert_method": "ffmpeg_flac_segment_2_of_2",
+        "load_date": "2026-11-02 04:02:06.775356",
+        "duration_seconds": "304.948",
+        "original_recording_id": "b64e76ebced283b4807837b4",
+        "segment_index": 2,
+        "speaker_scope": "segment",
+        "timestamp_scope": "segment",
+        "source_table": "prd-utpbi-data-operation.raw_queue_smart.queuesmart_mp3_catalog"
+      },
+      "source": {
+        "uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG1-20261031-093754_s02.flac",
+        "generation": "1793523895525234",
+        "size_bytes": 10629036
+      }
+    },
+    {
+      "audio_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG2-20261031-113247_s01.flac",
+      "recording_id": "53c31ae63e7d4cdd39294c17",
+      "catalog": {
+        "process_day": "2026-10-31",
+        "fecha_procesamiento": "2026-11-01 09:04:06+00:00",
+        "file_name": "015AG2-20261031-113247_s01.flac",
+        "source_file_name": "015AG2-20261031-113247.webm",
+        "gcs_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG2-20261031-113247_s01.flac",
+        "gcs_path": "queuesmart_mp3_s3/2026-10-31/015AG2-20261031-113247_s01.flac",
+        "campus_code": "015",
+        "type_code": "AG2",
+        "correlative": "113247",
+        "s3_uri": "s3://utp-a106-s3-prd-02-ticketero-counter/015AG2-20261031-113247.webm",
+        "s3_key": "015AG2-20261031-113247.webm",
+        "file_size_bytes": "36488184",
+        "sync_mode": "daily_yesterday",
+        "convert_method": "ffmpeg_flac_segment_1_of_2",
+        "load_date": "2026-11-02 04:02:06.775356",
+        "duration_seconds": "1083.4675",
+        "original_recording_id": "263af56566a8a46eb8ee97a2",
+        "segment_index": 1,
+        "speaker_scope": "segment",
+        "timestamp_scope": "segment",
+        "source_table": "prd-utpbi-data-operation.raw_queue_smart.queuesmart_mp3_catalog"
+      },
+      "source": {
+        "uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG2-20261031-113247_s01.flac",
+        "generation": "1793523879169174",
+        "size_bytes": 36488184
+      }
+    },
+    {
+      "audio_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG2-20261031-113247_s02.flac",
+      "recording_id": "27e5a1280c66400b27bf856c",
+      "catalog": {
+        "process_day": "2026-10-31",
+        "fecha_procesamiento": "2026-11-01 09:04:06+00:00",
+        "file_name": "015AG2-20261031-113247_s02.flac",
+        "source_file_name": "015AG2-20261031-113247.webm",
+        "gcs_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG2-20261031-113247_s02.flac",
+        "gcs_path": "queuesmart_mp3_s3/2026-10-31/015AG2-20261031-113247_s02.flac",
+        "campus_code": "015",
+        "type_code": "AG2",
+        "correlative": "113247",
+        "s3_uri": "s3://utp-a106-s3-prd-02-ticketero-counter/015AG2-20261031-113247.webm",
+        "s3_key": "015AG2-20261031-113247.webm",
+        "file_size_bytes": "2617630",
+        "sync_mode": "daily_yesterday",
+        "convert_method": "ffmpeg_flac_segment_2_of_2",
+        "load_date": "2026-11-02 04:02:06.775356",
+        "duration_seconds": "74.241",
+        "original_recording_id": "263af56566a8a46eb8ee97a2",
+        "segment_index": 2,
+        "speaker_scope": "segment",
+        "timestamp_scope": "segment",
+        "source_table": "prd-utpbi-data-operation.raw_queue_smart.queuesmart_mp3_catalog"
+      },
+      "source": {
+        "uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG2-20261031-113247_s02.flac",
+        "generation": "1793523885757619",
+        "size_bytes": 2617630
+      }
+    },
+    {
+      "audio_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG3-20261031-124707.flac",
+      "recording_id": "ea8a24ddf01935d1df02411b",
+      "catalog": {
+        "process_day": "2026-10-31",
+        "fecha_procesamiento": "2026-11-01 09:04:06+00:00",
+        "file_name": "015AG3-20261031-124707.flac",
+        "source_file_name": "015AG3-20261031-124707.webm",
+        "gcs_uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG3-20261031-124707.flac",
+        "gcs_path": "queuesmart_mp3_s3/2026-10-31/015AG3-20261031-124707.flac",
+        "campus_code": "015",
+        "type_code": "AG3",
+        "correlative": "124707",
+        "s3_uri": "s3://utp-a106-s3-prd-02-ticketero-counter/015AG3-20261031-124707.webm",
+        "s3_key": "015AG3-20261031-124707.webm",
+        "file_size_bytes": "15504276",
+        "sync_mode": "daily_yesterday",
+        "convert_method": "ffmpeg_flac_loudnorm",
+        "load_date": "2026-11-02 04:02:06.775356",
+        "duration_seconds": "478.92",
+        "original_recording_id": "48c763e7b0c5bb55e691f88f",
+        "segment_index": null,
+        "speaker_scope": "segment",
+        "timestamp_scope": "segment",
+        "source_table": "prd-utpbi-data-operation.raw_queue_smart.queuesmart_mp3_catalog"
+      },
+      "source": {
+        "uri": "gs://prd-utp-stg-queuesmart/queuesmart_mp3_s3/2026-10-31/015AG3-20261031-124707.flac",
+        "generation": "1793523862713704",
+        "size_bytes": 15504276
+      }
+    }
+  ]
+}

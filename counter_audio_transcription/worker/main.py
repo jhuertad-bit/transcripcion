@@ -26,12 +26,16 @@ def main():
     from worker.catalog import prepare, read_items
     client = storage.Client(project=os.environ.get("GCP_PROJECT"))
     role = os.environ.get("JOB_ROLE", "single")
+    if role == "roles":
+        from worker.roles import main as classify_roles
+        classify_roles()
+        return
     if role == "prepare":
         from google.cloud import bigquery
         prepare(client, bigquery.Client(project=os.environ.get("GCP_PROJECT")))
         return
     if role not in ("single", "worker"):
-        raise ValueError("JOB_ROLE debe ser single, prepare o worker")
+        raise ValueError("JOB_ROLE debe ser single, prepare, worker o roles")
     items = read_items(client) if role == "worker" else [None]
     parser = argparse.ArgumentParser(description="Counter: procesar una URI GCS por ejecución")
     parser.add_argument("--audio-uri", default=os.environ.get("AUDIO_URI"))

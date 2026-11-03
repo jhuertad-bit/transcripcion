@@ -9,3 +9,5 @@ outputs/
 
 # Audios de prueba: se cargan en GCS, no en Git ni en la imagen.
 samples/audios/
+
+.venv-roles/

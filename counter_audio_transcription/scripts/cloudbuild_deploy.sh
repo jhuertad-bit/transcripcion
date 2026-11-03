@@ -56,6 +56,15 @@ if [[ -n "${_BQ_RESULTS_TABLE}" && -z "${_BQ_LOCATION}" ]]; then
   echo 'ERROR: completar _BQ_LOCATION para habilitar resultados BigQuery.' >&2
   exit 1
 fi
+case "${_ENABLE_ROLE_CLASSIFICATION:-false}" in
+  false) ;;
+  true)
+    if [[ -z "${_BQ_RESULTS_TABLE:-}" || -z "${_BQ_LOCATION:-}" || -z "${_BQ_ROLES_TABLE:-}" ]]; then
+      echo 'ERROR: roles requiere BQ_RESULTS_TABLE, BQ_LOCATION y BQ_ROLES_TABLE.' >&2
+      exit 1
+    fi ;;
+  *) echo 'ERROR: _ENABLE_ROLE_CLASSIFICATION debe ser true o false.' >&2; exit 1 ;;
+esac
 case "${1:-}" in
   validate) exit 0 ;;
   deploy) ;;
@@ -70,6 +79,9 @@ import sys
 from pathlib import Path
 values = {
     'GCP_PROJECT': os.environ['_PROJECT_ID'],
+    'BQ_ROLES_TABLE': os.environ.get('_BQ_ROLES_TABLE', ''),
+    'ROLE_MODEL': os.environ.get('_ROLE_MODEL', 'gemini-3.5-flash'),
+    'ROLE_CONNECTION': os.environ.get('_ROLE_CONNECTION', ''),
     'ALLOWED_INPUT_BUCKETS': os.environ['_ALLOWED_INPUT_BUCKETS'],
     'OUTPUT_GCS_ROOT': os.environ['_OUTPUT_GCS_ROOT'],
     'ENABLE_DIARIZATION': os.environ['_ENABLE_DIARIZATION'],
@@ -106,4 +118,4 @@ gcloud workflows deploy "${_WORKFLOW_NAME}" \
   --project="${_PROJECT_ID}" --location="${_LOCATION}" \
   --source="${_SOURCE_DIR}/workflows/daily_pipeline.yaml" \
   --service-account="${_WORKFLOW_SERVICE_ACCOUNT}" \
-  --set-env-vars="PROJECT_ID=${_PROJECT_ID},LOCATION=${_LOCATION},JOB_NAME=${_JOB_NAME},MANIFEST_GCS_ROOT=${_MANIFEST_GCS_ROOT%/}" --quiet
+  --set-env-vars="PROJECT_ID=${_PROJECT_ID},LOCATION=${_LOCATION},JOB_NAME=${_JOB_NAME},MANIFEST_GCS_ROOT=${_MANIFEST_GCS_ROOT%/},ROLE_ENABLED=${_ENABLE_ROLE_CLASSIFICATION:-false}" --quiet

@@ -8,6 +8,15 @@ main:
           - job: ${sys.get_env("JOB_NAME")}
           - root: ${sys.get_env("MANIFEST_GCS_ROOT")}
           - batch: ${sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+    - roles_resume:
+        switch:
+          - condition: ${map.get(args, "roles_only") == true}
+            next: resume_manifest
+        next: prepare
+    - resume_manifest:
+        assign:
+          - uri: ${args.manifest_uri}
+        next: classify_roles
     - prepare:
         call: googleapis.run.v2.projects.locations.jobs.run
         args:
@@ -58,6 +67,32 @@ main:
           connector_params:
             timeout: 86400
         result: execution
+    - roles_enabled:
+        switch:
+          - condition: ${sys.get_env("ROLE_ENABLED") == "true"}
+            next: classify_roles
+        next: done
+    - classify_roles:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job}
+          body:
+            overrides:
+              taskCount: 1
+              containerOverrides:
+                - env:
+                    - name: JOB_ROLE
+                      value: roles
+                    - name: MANIFEST_URI
+                      value: ${uri}
+          connector_params:
+            timeout: 86400
+        result: role_execution
+        next: roles_done
+    - roles_done:
+        return:
+          status: roles_completed
+          manifest_uri: ${uri}
     - done:
         return:
           manifest_uri: ${uri}
