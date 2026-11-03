@@ -15,6 +15,10 @@ if (( _FILES_PER_WORKER > 100 || _WHISPER_CPU_THREADS > _CPU )); then
   echo 'ERROR: maximo 100 archivos por worker; hilos Whisper no deben superar CPU.' >&2
   exit 1
 fi
+if [[ ! "${_DIARIZATION_CPU_THREADS:-4}" =~ ^[1-9][0-9]*$ ]] || (( ${_DIARIZATION_CPU_THREADS:-4} > _CPU )); then
+  echo 'ERROR: DIARIZATION_CPU_THREADS debe ser positivo y no superar CPU.' >&2
+  exit 1
+fi
 case "${_ENABLE_DIARIZATION:-}" in
   false) secret_args=(--remove-secrets=HF_TOKEN) ;;
   true)
@@ -71,6 +75,7 @@ values = {
     'ENABLE_DIARIZATION': os.environ['_ENABLE_DIARIZATION'],
     'FILES_PER_WORKER': os.environ['_FILES_PER_WORKER'],
     'WHISPER_CPU_THREADS': os.environ['_WHISPER_CPU_THREADS'],
+    'DIARIZATION_CPU_THREADS': os.environ.get('_DIARIZATION_CPU_THREADS', '4'),
     'WHISPER_MODEL': os.environ['_WHISPER_MODEL'],
 }
 for key in ('BQ_SOURCE_TABLE', 'BQ_SOURCE_LOCATION', 'BQ_RESULTS_TABLE', 'BQ_LOCATION', 'MANIFEST_GCS_ROOT', 'BATCH_MAX_FILES', 'PROCESS_DAY_FROM', 'PROCESS_DAY_TO'):

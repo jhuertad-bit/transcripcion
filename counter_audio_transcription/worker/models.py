@@ -49,17 +49,33 @@ def diarize(path, config):
     import soundfile as sf
     import torch
     from pyannote.audio import Pipeline
+    torch.set_num_threads(config.diarization_cpu_threads)
+    started = time.monotonic()
     # Ruta local opcional en DIARIZATION_MODEL; los modelos remotos gated necesitan HF_TOKEN.
     kwargs = {"token": os.environ["HF_TOKEN"]} if os.environ.get("HF_TOKEN") else {}
     pipeline = Pipeline.from_pretrained(config.diarization_model, **kwargs)
     pipeline.to(torch.device(config.device))
+    if config.device.startswith("cuda"):
+        torch.cuda.synchronize()
+    load_seconds = time.monotonic() - started
+    started = time.monotonic()
     data, rate = sf.read(str(path), dtype="float32", always_2d=True)
+    input_seconds = time.monotonic() - started
+    started = time.monotonic()
     output = pipeline({"waveform": torch.from_numpy(data.T.copy()), "sample_rate": rate},
                       min_speakers=config.min_speakers, max_speakers=config.max_speakers)
+
+    if config.device.startswith("cuda"):
+        torch.cuda.synchronize()
+    inference_seconds = time.monotonic() - started
 
     def turns(annotation):
         return sorted([{"speaker_id": str(speaker), "start": float(turn.start), "end": float(turn.end)}
                        for turn, speaker in annotation], key=lambda x: (x["start"], x["end"]))
 
     return {"regular": turns(output.speaker_diarization),
-            "exclusive": turns(output.exclusive_speaker_diarization)}
+            "exclusive": turns(output.exclusive_speaker_diarization),
+            "timings": {"diarization_model_load_seconds": round(load_seconds, 3),
+                        "diarization_input_seconds": round(input_seconds, 3),
+                        "diarization_inference_seconds": round(inference_seconds, 3)},
+            "cpu_threads": torch.get_num_threads()}

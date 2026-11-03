@@ -72,6 +72,7 @@ def run(repository, request, config, sink=None, max_seconds=7200,
                 stage = time.monotonic()
                 turns = diarize_audio(wav, config) if config.enable_diarization else {"regular": [], "exclusive": []}
                 timings["diarize_seconds"] = round(time.monotonic() - stage, 3)
+                timings.update(turns.get("timings", {}))
                 stage = time.monotonic()
                 assigned = assign_words(asr["words"], turns["exclusive"], turns["regular"],
                                         config.min_overlap_ratio, config.ambiguity_margin)
@@ -87,6 +88,10 @@ def run(repository, request, config, sink=None, max_seconds=7200,
             result = {"schema_version": "1.0", "processing_key": key, "attempt_id": attempt,
                       "recording_id": request.recording_id, "source_system": "counter",
                       "source": repository.source, "processed_at": utc_now(),
+                      "audio_identity": {"recording_id": request.recording_id,
+                                         "audio_uri": request.audio_uri,
+                                         "file_name": request.audio_uri.rsplit("/", 1)[-1],
+                                         "catalog": catalog_metadata},
                       "duration_seconds": duration, "elapsed_seconds": round(time.monotonic()-t0, 3),
                       "timings": timings, "whisper_model_reused": asr.get("model_reused", False),
                       "models": config.as_dict(), "packages": package_versions(),
@@ -101,7 +106,7 @@ def run(repository, request, config, sink=None, max_seconds=7200,
             json_path, text_path = f"attempts/{attempt}/result.json", f"attempts/{attempt}/transcript.txt"
             stage = time.monotonic()
             result_uri = repository.write_json(key, json_path, result, immutable=True)
-            text_uri = repository.write_text(key, text_path, result["serialized_level_1"])
+            text_uri = repository.write_text(key, text_path, "Grabación: " + request.recording_id + "\nAudio: " + request.audio_uri + "\n\n" + result["serialized_level_1"])
             if sink:
                 sink.write(result, result_uri)
             # Publicar referencia solo después de persistir las salidas y sincronizar BQ si está habilitado.
@@ -111,7 +116,9 @@ def run(repository, request, config, sink=None, max_seconds=7200,
                                   "result_uri": result_uri, "updated_at": utc_now(),
                                   "timings": {**timings, "publish_seconds": round(time.monotonic() - stage, 3)},
                                   "total_worker_seconds": round(time.monotonic() - t0, 3)})
-            return {"status": "completed", "processing_key": key, "result_uri": result_uri}
+            return {"status": "completed", "recording_id": request.recording_id,
+                    "audio_uri": request.audio_uri, "processing_key": key, "result_uri": result_uri,
+                    "text_uri": text_uri, "duration_seconds": duration, "timings": timings}
         except Exception as exc:
             try:
                 repository.write_json(key, "status.json", {**status, "status": "failed",

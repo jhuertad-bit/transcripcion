@@ -16,6 +16,7 @@ class ModelConfig:
     device: str = "cpu"
     compute_type: str = "int8"
     cpu_threads: int = 4
+    diarization_cpu_threads: int = 4
     language: str = "es"
     initial_prompt: str = "Atención presencial en español de Perú sobre carreras, admisión y matrícula universitaria."
     min_speakers: int = 1
@@ -25,8 +26,8 @@ class ModelConfig:
     pipeline_version: str = "counter-v0.3.0"
 
     def __post_init__(self):
-        if self.cpu_threads < 1:
-            raise ValueError("WHISPER_CPU_THREADS debe ser positivo")
+        if self.cpu_threads < 1 or self.diarization_cpu_threads < 1:
+            raise ValueError("Los hilos CPU de Whisper y diarización deben ser positivos")
         if not 1 <= self.min_speakers <= self.max_speakers:
             raise ValueError("Rango de hablantes inválido")
         if not 0 < self.min_overlap_ratio <= 1 or not 0 <= self.ambiguity_margin <= 1:
@@ -39,6 +40,7 @@ class ModelConfig:
             ("whisper_model", "WHISPER_MODEL", str), ("diarization_model", "DIARIZATION_MODEL", str),
             ("device", "MODEL_DEVICE", str), ("compute_type", "WHISPER_COMPUTE_TYPE", str),
             ("cpu_threads", "WHISPER_CPU_THREADS", int),
+            ("diarization_cpu_threads", "DIARIZATION_CPU_THREADS", int),
             ("language", "LANGUAGE", str), ("initial_prompt", "INITIAL_PROMPT", str),
             ("min_speakers", "MIN_SPEAKERS", int), ("max_speakers", "MAX_SPEAKERS", int),
             ("min_overlap_ratio", "MIN_OVERLAP_RATIO", float),
