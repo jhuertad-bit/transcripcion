@@ -84,6 +84,15 @@ def validate_roles(segments, roles):
 
 
 def classification_sql(model, connection=None):
+    if model.count(".") >= 2 and not model.startswith("https://"):
+        if not re.fullmatch(r"[a-z][a-z0-9-]*\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_-]+", model):
+            raise ValueError("Modelo remoto inválido: project.dataset.model")
+        if connection:
+            raise ValueError("El modelo remoto usa su propia conexión; dejar ROLE_CONNECTION vacío")
+        return ("SELECT TO_JSON_STRING(generated) AS response FROM AI.GENERATE_TABLE("
+                f"MODEL `{model}`, (SELECT @prompt AS prompt), STRUCT("
+                + sql_string(OUTPUT_SCHEMA) + " AS output_schema, "
+                "8192 AS max_output_tokens, 0 AS temperature)) AS generated")
     args = ["@prompt", "endpoint => " + sql_string(model),
             "output_schema => " + sql_string(OUTPUT_SCHEMA),
             "model_params => JSON '{\"generationConfig\":{\"temperature\":0}}'"]
@@ -128,7 +137,7 @@ def setup(client, results_table, roles_table, location):
     query(client, f"""CREATE OR REPLACE VIEW `{view}` AS
       SELECT b.processing_key, b.recording_id, b.audio_uri, b.result_uri,
         r.model, r.prompt_version, SAFE_CAST(JSON_VALUE(s, '$.start') AS FLOAT64) AS start,
-        SAFE_CAST(JSON_VALUE(s, '$.end') AS FLOAT64) AS end,
+        SAFE_CAST(JSON_VALUE(s, '$.end') AS FLOAT64) AS `end`,
         JSON_VALUE(s, '$.speaker_id') AS speaker_id, JSON_VALUE(s, '$.text') AS text,
         COALESCE(JSON_VALUE(role, '$.role'), 'Desconocido') AS role,
         COALESCE(SAFE_CAST(JSON_VALUE(role, '$.requires_review') AS BOOL), TRUE) AS requires_review,
