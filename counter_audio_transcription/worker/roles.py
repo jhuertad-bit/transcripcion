@@ -157,11 +157,11 @@ def save_roles(client, table, location, result, uri, model, status, roles, error
     query(client, f"""MERGE `{table_id(table)}` T
       USING (SELECT @key AS processing_key, @model AS model, @version AS prompt_version) S
       ON T.processing_key=S.processing_key AND T.model=S.model AND T.prompt_version=S.prompt_version
-      WHEN MATCHED THEN UPDATE SET status=@status, roles=PARSE_JSON(@roles),
+      WHEN MATCHED THEN UPDATE SET status=@status, roles=PARSE_JSON(@roles, wide_number_mode => 'round'),
         error_type=@error, updated_at=CURRENT_TIMESTAMP()
       WHEN NOT MATCHED THEN INSERT
         (processing_key,recording_id,audio_uri,result_uri,model,prompt_version,status,roles,error_type,updated_at)
-        VALUES (@key,@recording,@audio,@uri,@model,@version,@status,PARSE_JSON(@roles),@error,CURRENT_TIMESTAMP())""",
+        VALUES (@key,@recording,@audio,@uri,@model,@version,@status,PARSE_JSON(@roles, wide_number_mode => 'round'),@error,CURRENT_TIMESTAMP())""",
           location, values)
 
 
@@ -198,6 +198,7 @@ def run_manifest(storage, client, manifest_uri, output_root, results_table, role
     sql = classification_sql(model, connection)
     failures = 0
     for result, uri in published_results(storage, manifest_uri, output_root):
+        stage = "import_result"
         try:
             sink.write(result, uri)
             if import_only:
@@ -215,10 +216,12 @@ def run_manifest(storage, client, manifest_uri, output_root, results_table, role
                         for s in result["transcription"]]
             if not any(s["speaker_id"] for s in segments):
                 raise ValueError("Sin voces identificadas")
+            stage = "classify_roles"
             response = json.loads(next(iter(query(client, sql, location,
                                   {"prompt": PROMPT + json.dumps(segments, ensure_ascii=False)})))["response"])
             if response.get("status"):
                 raise RuntimeError("Gemini devolvió un estado de error; revisar el job de BigQuery")
+            stage = "validate_roles"
             roles = validate_roles(segments, response.get("roles"))
             save_roles(client, roles_table, location, result, uri, model, "completed", roles)
             print(json.dumps({"status": "classified", "audio_uri": result["source"]["uri"],
@@ -226,7 +229,8 @@ def run_manifest(storage, client, manifest_uri, output_root, results_table, role
                                          "requires_review": x["requires_review"]} for x in roles]}), flush=True)
         except Exception as exc:
             failures += 1
-            logging.error("Clasificación fallida para %s: %s", result["processing_key"], type(exc).__name__)
+            logging.error("Roles falló: key=%s stage=%s type=%s detail=%s",
+                          result["processing_key"], stage, type(exc).__name__, str(exc)[:4000])
             # No publicar citas inválidas como clasificaciones exitosas.
             save_roles(client, roles_table, location, result, uri, model, "failed", [], type(exc).__name__)
     if failures:

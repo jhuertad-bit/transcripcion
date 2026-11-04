@@ -24,7 +24,7 @@ class BigQuerySink:
                                                      "speaker_scope": "segment", "timestamp_scope": "segment"}, ensure_ascii=False)}
         types = {"duration_seconds": "FLOAT64", "elapsed_seconds": "FLOAT64", "processed_at": "TIMESTAMP"}
         fields = list(values)
-        select = ", ".join((f"PARSE_JSON(@{f})" if f == "serialized_level_2" else f"@{f}") + f" AS {f}" for f in fields)
+        select = ", ".join((f"PARSE_JSON(@{f}, wide_number_mode => 'round')" if f == "serialized_level_2" else f"@{f}") + f" AS {f}" for f in fields)
         update = ", ".join(f"{f}=S.{f}" for f in fields if f != "processing_key")
         sql = (f"MERGE `{self.table}` T USING (SELECT {select}) S ON T.processing_key=S.processing_key "
                f"WHEN MATCHED THEN UPDATE SET {update} "
