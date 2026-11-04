@@ -119,6 +119,7 @@ PY
 gcloud run jobs deploy "${_JOB_NAME}" \
   --project="${_PROJECT_ID}" --region="${_LOCATION}" \
   --image="${IMAGE_URI}" --service-account="${_SERVICE_ACCOUNT}" \
+  --command=python --args=-m,worker.main \
   --env-vars-file="$env_file" \
   "${secret_args[@]}" \
   --cpu="${_CPU}" --memory="${_MEMORY}" \

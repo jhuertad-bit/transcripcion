@@ -13,12 +13,14 @@ class RoleTests(unittest.TestCase):
             {"speaker_id": None, "start": 5.0, "end": 5.5, "text": "Sí."}]
         self.roles = [
             {"speaker_id": "SPEAKER_01", "role": "Asesor", "requires_review": False,
-             "evidence": [{"start": 1.0, "quote": "Te explico la matrícula."}]},
+             "evidence": [{"segment_id": 0}]},
             {"speaker_id": "SPEAKER_00", "role": "Cliente", "requires_review": False,
-             "evidence": [{"start": 3.0, "quote": "Quiero estudiar."}]}]
+             "evidence": [{"segment_id": 1}]}]
 
     def test_roles_are_dynamic_not_number_based(self):
-        self.assertEqual(validate_roles(self.segments, self.roles), self.roles)
+        validated = validate_roles(self.segments, copy.deepcopy(self.roles))
+        self.assertEqual(validated[0]["evidence"][0]["quote"], self.segments[0]["text"])
+        self.assertEqual(validated[0]["evidence"][0]["start"], 1.0)
         segments = copy.deepcopy(self.segments)
         roles = copy.deepcopy(self.roles)
         for item in segments + roles:
@@ -26,14 +28,20 @@ class RoleTests(unittest.TestCase):
                 item["speaker_id"] = {"SPEAKER_00": "SPEAKER_01", "SPEAKER_01": "SPEAKER_00"}[item["speaker_id"]]
         self.assertEqual(validate_roles(segments, roles)[0]["role"], "Asesor")
 
-    def test_invented_quotes_and_cross_speaker_evidence_rejected(self):
-        for evidence in ({"start": 1.0, "quote": "Soy asesor"},
-                         {"start": 3.0, "quote": "Quiero estudiar."},
-                         {"start": 2.5, "quote": "Te explico la matrícula."}):
+    def test_invalid_cross_speaker_and_unknown_segment_references_rejected(self):
+        for evidence in ({"segment_id": 99}, {"segment_id": 1}, {"segment_id": 2},
+                         {"segment_id": -1}, {"segment_id": True}, {"segment_id": "0"}):
             roles = copy.deepcopy(self.roles)
             roles[0]["evidence"] = [evidence]
             with self.assertRaises(ValueError):
                 validate_roles(self.segments, roles)
+
+    def test_quotes_and_times_are_reconstructed_from_source(self):
+        roles = copy.deepcopy(self.roles)
+        roles[0]["evidence"] = [{"segment_id": 0, "quote": "texto inventado", "start": 999}]
+        output = validate_roles(self.segments, roles)
+        self.assertEqual(output[0]["evidence"][0], {
+            "segment_id": 0, "start": 1.0, "end": 2.0, "quote": "Te explico la matrícula."})
 
     def test_missing_duplicate_and_unknown_speakers_rejected(self):
         for roles in (self.roles[:1], self.roles + self.roles[:1],
@@ -52,6 +60,17 @@ class RoleTests(unittest.TestCase):
     def test_connection_cannot_inject_sql(self):
         with self.assertRaises(ValueError):
             classification_sql("gemini-3.5-flash", "bad'); DROP TABLE x")
+
+    def test_remote_model_uses_existing_model_and_parameterized_prompt(self):
+        sql = classification_sql("prd-utpbi-data-operation.adf_speech_analytics.gemini-3-5-flash")
+        self.assertIn("AI.GENERATE_TABLE(", sql)
+        self.assertIn("MODEL `prd-utpbi-data-operation.adf_speech_analytics.gemini-3-5-flash`", sql)
+        self.assertIn("SELECT @prompt AS prompt", sql)
+        self.assertNotIn("connection_id", sql)
+        with self.assertRaises(ValueError):
+            classification_sql("project.dataset.model`); DROP TABLE x")
+        with self.assertRaises(ValueError):
+            classification_sql("project.dataset.model", "project.US.connection")
 
     @patch("worker.roles.save_roles")
     @patch("worker.roles.query")

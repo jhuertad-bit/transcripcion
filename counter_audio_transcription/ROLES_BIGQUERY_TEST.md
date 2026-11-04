@@ -1,3 +1,31 @@
+> Prompt v2: Gemini selecciona segment_id como evidencia. El programa valida
+> que existan y pertenezcan al speaker y copia texto y tiempos originales.
+> Se vuelve a clasificar la muestra completa con counter-roles-v2; v1 permanece
+> disponible. Filtrar la vista por prompt_version para evitar mezclar versiones.
+
+> Corrección de importación: PARSE_JSON usa wide_number_mode => 'round' para
+> números de punto flotante como 0.9215774536132812. El JSON original de GCS se
+> conserva; BigQuery almacena la representación numérica compatible. Se aplica
+> también a las evidencias de roles. El error se confirmó con una carga del
+> archivo original, antes de Gemini. Los errores previos pueden reintentarse.
+
+## Modelo remoto existente (ruta preferida del piloto)
+
+Se verificó una llamada manual con el usuario mediante AI.GENERATE_TABLE al
+modelo prd-utpbi-data-operation.adf_speech_analytics.gemini-3-5-flash.
+Esto aún no confirma los permisos de la cuenta de servicio del flujo.
+Configurar en el activador:
+
+_ROLE_MODEL=prd-utpbi-data-operation.adf_speech_analytics.gemini-3-5-flash
+_ROLE_CONNECTION= (vacío; el modelo remoto usa su propia conexión)
+
+Desplegar el worker actualizado antes de repetir roles_only con la URI del
+manifiesto ORIGINAL de cinco archivos; no usar el ID de una ejecución de roles
+para buscar un manifiesto nuevo. No se recrea ni modifica el modelo compartido.
+Los resultados guardan la ruta completa del modelo; filtrar la vista por ese
+valor y prompt_version=counter-roles-v1. Las consultas que filtran el endpoint
+simple gemini-3.5-flash deben actualizar ese filtro para ver esta prueba.
+
 # Roles dinámicos: piloto desde Cloud Shell
 
 Estado: implementación local, sin ejecución de SQL ni llamadas a Gemini en GCP.

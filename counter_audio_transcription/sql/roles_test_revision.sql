@@ -3,9 +3,9 @@ SELECT recording_id, audio_uri, model, prompt_version, status, roles, error_type
 FROM `prd-utpbi-data-operation.raw_queue_smart.counter_roles_test`
 ORDER BY updated_at DESC;
 
-SELECT recording_id, audio_uri, start, end, speaker_id, role, requires_review, text
+SELECT recording_id, audio_uri, start, `end`, speaker_id, role, requires_review, text
 FROM `prd-utpbi-data-operation.raw_queue_smart.counter_roles_test_segmentos`
-WHERE model = 'gemini-3.5-flash' AND prompt_version = 'counter-roles-v1'
+WHERE model = 'gemini-3.5-flash' AND prompt_version = 'counter-roles-v2'
 ORDER BY audio_uri, start;
 
 -- Contrastar con la revisión manual del usuario SOLO para este archivo.
@@ -18,5 +18,5 @@ SELECT JSON_VALUE(r, '$.speaker_id') AS speaker_id,
 FROM `prd-utpbi-data-operation.raw_queue_smart.counter_roles_test`,
 UNNEST(JSON_QUERY_ARRAY(roles)) r
 WHERE ENDS_WITH(audio_uri, '/015AG3-20261031-124707.flac')
-  AND model = 'gemini-3.5-flash' AND prompt_version = 'counter-roles-v1'
+  AND model = 'gemini-3.5-flash' AND prompt_version = 'counter-roles-v2'
   AND status = 'completed';
