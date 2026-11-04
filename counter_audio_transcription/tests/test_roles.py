@@ -43,6 +43,31 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(output[0]["evidence"][0], {
             "segment_id": 0, "start": 1.0, "end": 2.0, "quote": "Te explico la matrícula."})
 
+    def test_review_mode_demotes_only_role_with_wrong_speaker_evidence(self):
+        roles = copy.deepcopy(self.roles)
+        roles[0]["evidence"] = [{"segment_id": 1}]
+        output = validate_roles(self.segments, roles, allow_review=True)
+        self.assertEqual(output[0]["role"], "Desconocido")
+        self.assertTrue(output[0]["requires_review"])
+        self.assertEqual(output[0]["evidence"], [])
+        self.assertEqual(output[0]["proposed_role"], "Asesor")
+        self.assertEqual(output[0]["proposed_evidence"], [{"segment_id": 1}])
+        self.assertIn("otro speaker", output[0]["validation_issues"][0])
+        self.assertEqual(output[1]["role"], "Cliente")
+        self.assertEqual(output[1]["evidence"][0]["quote"], "Quiero estudiar.")
+
+    def test_review_mode_still_rejects_missing_or_fabricated_speakers(self):
+        for roles in (self.roles[:1], self.roles + [{"speaker_id": "invented"}]):
+            with self.assertRaises(ValueError):
+                validate_roles(self.segments, copy.deepcopy(roles), allow_review=True)
+
+    def test_role_without_evidence_is_reviewable_not_accepted(self):
+        roles = copy.deepcopy(self.roles)
+        roles[0]["evidence"] = []
+        output = validate_roles(self.segments, roles, allow_review=True)
+        self.assertEqual(output[0]["role"], "Desconocido")
+        self.assertTrue(output[0]["requires_review"])
+
     def test_missing_duplicate_and_unknown_speakers_rejected(self):
         for roles in (self.roles[:1], self.roles + self.roles[:1],
                       self.roles + [{"speaker_id": "invented"}]):

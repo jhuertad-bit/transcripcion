@@ -53,7 +53,7 @@ def query(client, sql, location, values=None):
                         job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
 
 
-def validate_roles(segments, roles):
+def validate_roles(segments, roles, allow_review=False):
     expected = {s["speaker_id"] for s in segments if s.get("speaker_id")}
     if not isinstance(roles, list):
         raise ValueError("Respuesta sin lista de roles")
@@ -68,23 +68,41 @@ def validate_roles(segments, roles):
         if not isinstance(item.get("requires_review"), bool):
             raise ValueError("requires_review inválido")
         evidence = item.get("evidence") or []
+        issues = []
         if item["role"] != "Desconocido" and not evidence:
-            raise ValueError("Rol sin evidencia")
+            if not allow_review:
+                raise ValueError("Rol sin evidencia")
+            issues.append("Rol sin evidencia")
         if item["role"] == "Desconocido" and not item["requires_review"]:
             raise ValueError("Desconocido debe requerir revisión")
         resolved = []
         for e in evidence:
             segment_id = e.get("segment_id")
+            error = None
             if type(segment_id) is not int or not 0 <= segment_id < len(segments):
-                raise ValueError("Referencia de evidencia inexistente")
-            segment = segments[segment_id]
-            if segment.get("speaker_id") != speaker:
-                raise ValueError("Evidencia pertenece a otro speaker o a un tramo desconocido")
-            if not segment.get("text", "").strip():
-                raise ValueError("Segmento de evidencia vacío")
+                error = "Referencia de evidencia inexistente"
+            else:
+                segment = segments[segment_id]
+                if segment.get("speaker_id") != speaker:
+                    error = "Evidencia pertenece a otro speaker o a un tramo desconocido"
+                elif not segment.get("text", "").strip():
+                    error = "Segmento de evidencia vacío"
+            if error:
+                if not allow_review:
+                    raise ValueError(error)
+                issues.append(error)
+                continue
             resolved.append({"segment_id": segment_id, "start": segment["start"],
                              "end": segment["end"], "quote": segment["text"]})
-        item["evidence"] = resolved
+        if issues:
+            item["proposed_role"] = item["role"]
+            item["proposed_evidence"] = evidence
+            item["validation_issues"] = sorted(set(issues))
+            item["model_review_reason"] = item.get("review_reason")
+            item.update(role="Desconocido", requires_review=True, evidence=[],
+                        review_reason="Revisión requerida: " + "; ".join(sorted(set(issues))))
+        else:
+            item["evidence"] = resolved
     if seen != expected:
         raise ValueError("Faltan speakers en la respuesta")
     return roles
@@ -229,7 +247,7 @@ def run_manifest(storage, client, manifest_uri, output_root, results_table, role
             if response.get("status"):
                 raise RuntimeError("Gemini devolvió un estado de error; revisar el job de BigQuery")
             stage = "validate_roles"
-            roles = validate_roles(segments, response.get("roles"))
+            roles = validate_roles(segments, response.get("roles"), allow_review=True)
             save_roles(client, roles_table, location, result, uri, model, "completed", roles)
             print(json.dumps({"status": "classified", "audio_uri": result["source"]["uri"],
                               "roles": [{"speaker_id": x["speaker_id"], "role": x["role"],
