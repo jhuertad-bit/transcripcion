@@ -74,7 +74,10 @@ def validate_roles(segments, roles, allow_review=False):
                 raise ValueError("Rol sin evidencia")
             issues.append("Rol sin evidencia")
         if item["role"] == "Desconocido" and not item["requires_review"]:
-            raise ValueError("Desconocido debe requerir revisión")
+            if not allow_review:
+                raise ValueError("Desconocido debe requerir revisión")
+            item["requires_review"] = True
+            item["review_reason"] = item.get("review_reason") or "No hay evidencia suficiente para determinar el rol."
         resolved = []
         for e in evidence:
             segment_id = e.get("segment_id")
@@ -229,6 +232,7 @@ def run_manifest(storage, client, manifest_uri, output_root, results_table, role
             if import_only:
                 print(json.dumps({"status": "imported", "audio_uri": result["source"]["uri"]}), flush=True)
                 continue
+            stage = "check_result"
             if result.get("diarization_status") != "completed":
                 raise ValueError("Se requiere diarización completada")
             existing = list(query(client, f"SELECT 1 FROM `{table_id(roles_table)}` WHERE processing_key=@key "
@@ -237,10 +241,18 @@ def run_manifest(storage, client, manifest_uri, output_root, results_table, role
             if existing:
                 print(json.dumps({"status": "already_classified", "audio_uri": result["source"]["uri"]}), flush=True)
                 continue
+            stage = "prepare_role_input"
             segments = [{"segment_id": i, **{k: s.get(k) for k in ("start", "end", "speaker_id", "text")}}
                         for i, s in enumerate(result["transcription"])]
             if not any(s["speaker_id"] for s in segments):
-                raise ValueError("Sin voces identificadas")
+                review = [{"speaker_id": None, "scope": "recording", "role": "Desconocido",
+                           "requires_review": True, "evidence": [],
+                           "review_reason": "Sin voces identificadas por diarización; revisar el audio y sus segmentos."}]
+                save_roles(client, roles_table, location, result, uri, model, "completed", review)
+                print(json.dumps({"status": "completed", "requires_review": True,
+                                  "reason": "no_identified_speakers",
+                                  "audio_uri": result["source"]["uri"]}), flush=True)
+                continue
             stage = "classify_roles"
             response = json.loads(next(iter(query(client, sql, location,
                                   {"prompt": PROMPT + json.dumps(segments, ensure_ascii=False)})))["response"])

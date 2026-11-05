@@ -82,6 +82,40 @@ class RoleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_roles(self.segments, roles)
 
+    def test_unknown_flag_is_normalized_for_publication(self):
+        roles = copy.deepcopy(self.roles)
+        roles[0].update(role="Desconocido", evidence=[], requires_review=False, review_reason="")
+        output = validate_roles(self.segments, roles, allow_review=True)
+        self.assertTrue(output[0]["requires_review"])
+        self.assertTrue(output[0]["review_reason"])
+        self.assertEqual(output[0]["role"], "Desconocido")
+        self.assertEqual(output[1]["role"], "Cliente")
+
+    @patch("worker.roles.save_roles")
+    @patch("worker.roles.query")
+    @patch("worker.roles.BigQuerySink")
+    @patch("worker.roles.published_results")
+    def test_without_speakers_records_file_review_without_calling_gemini(self, published, sink, query, save):
+        for segments in ([], [self.segments[2]]):
+            with self.subTest(segments=segments):
+                query.reset_mock()
+                query.return_value = []
+                save.reset_mock()
+                result = {"processing_key": "key", "diarization_status": "completed",
+                          "recording_id": "recording", "transcription": segments,
+                          "source": {"uri": "gs://bucket/audio"}}
+                published.return_value = [(result, "gs://out/result.json")]
+                run_manifest(MagicMock(), MagicMock(), "gs://b/manifest", "gs://b/results",
+                             "project.dataset.results", "project.dataset.roles", "US")
+                query.assert_called_once()  # Solo consulta la clasificación previa.
+                self.assertEqual(save.call_args.args[6], "completed")
+                marker = save.call_args.args[7][0]
+                self.assertIsNone(marker["speaker_id"])
+                self.assertEqual(marker["scope"], "recording")
+                self.assertEqual(marker["role"], "Desconocido")
+                self.assertTrue(marker["requires_review"])
+                self.assertEqual(marker["evidence"], [])
+
     def test_connection_cannot_inject_sql(self):
         with self.assertRaises(ValueError):
             classification_sql("gemini-3.5-flash", "bad'); DROP TABLE x")
