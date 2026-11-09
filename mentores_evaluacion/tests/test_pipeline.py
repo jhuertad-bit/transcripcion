@@ -42,6 +42,8 @@ class PipelineTests(unittest.TestCase):
         self.assertNotIn("hist_mentores_catalog_snapshots", s)
         self.assertNotIn("hist_dias_utp", s)
         self.assertIn("raw_cita_promotor.cat_dias_utp", s)
+        self.assertIn("MODEL `prd-utpbi-data-operation.adf_speech_analytics.gemini-3-5-flash`", s)
+        self.assertNotIn("gemini-2-5-flash", s)
         self.assertNotIn("@date_from", s)
 
     def test_job_calls_persistent_procedure_with_bound_parameters(self):

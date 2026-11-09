@@ -56,6 +56,8 @@ ALTER TABLE `{RAW}.hist_mentores_execution_plan` ADD COLUMN IF NOT EXISTS catalo
     s = s.replace("DECLARE v_reprocesar_fecha BOOL DEFAULT FALSE;",
                   "DECLARE v_reprocesar_fecha BOOL DEFAULT @reprocess;")
     s = s.replace(f"{PROJECT}.raw_genesys_audios", RAW)
+    s = s.replace(f"{PROJECT}.adf_speech_analytics.gemini-2-5-flash",
+                  f"{PROJECT}.adf_speech_analytics.gemini-3-5-flash")
     s = s.replace("component:manual_audio_analyzer", "component:mentores_pipeline")
     s = s.replace("-- Carga diaria: toma audios de v_fecha_proceso y pendientes/errores anteriores.",
                   "-- Carga diaria: descubre audios disponibles hasta ayer, incluidos ingresos tardios.")

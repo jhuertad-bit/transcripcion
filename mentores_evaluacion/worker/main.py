@@ -69,7 +69,7 @@ def main():
             if client.get_dataset(f"{PROJECT}.{dataset}").location.upper() != client.location.upper():
                 raise ValueError(f"Ubicacion incompatible: {dataset}")
         client.get_table(f"{RAW}.hist_cita_mentor_audio_catalog")
-        client.get_model(f"{PROJECT}.adf_speech_analytics.gemini-2-5-flash")
+        client.get_model(f"{PROJECT}.adf_speech_analytics.gemini-3-5-flash")
         query((SQL / "01_init.sql").read_text(encoding="utf-8"))
         catalogs.initialize(client, RAW, query)
         # Los prompts se administran exclusivamente para mentores, sin tocar otros flujos.

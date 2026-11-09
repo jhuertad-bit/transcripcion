@@ -15,7 +15,7 @@ ni transcribe archivos de audio.
 | Cuenta Job y Workflow | `genesys-audio-processor@prd-utpbi-data-operation.iam.gserviceaccount.com` |
 | Ubicacion BigQuery | `US` (ambos datasets verificados) |
 | Fuente de audios | `raw_cita_promotor.hist_cita_mentor_audio_catalog` |
-| Modelo existente | `adf_speech_analytics.gemini-2-5-flash` |
+| Modelo indicado para este flujo | `adf_speech_analytics.gemini-3-5-flash` |
 | Conexion existente | `prd-utpbi-data-operation.US.utp_gen_ia_process` |
 | Procedimiento almacenado | `raw_cita_promotor.sp_process_speech_analytics_mentores` |
 | Firestore | Proyecto `citapromotor-utp`, base `(default)` |
