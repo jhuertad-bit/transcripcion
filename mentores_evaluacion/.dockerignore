@@ -1,0 +1,6 @@
+**
+!requirements.txt
+!worker/
+!worker/**
+!sql/
+!sql/**

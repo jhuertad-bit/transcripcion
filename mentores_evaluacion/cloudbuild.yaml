@@ -1,0 +1,56 @@
+# Contexto de build: esta carpeta. En un repositorio padre ajustar _SOURCE_DIR.
+substitutions:
+  _SOURCE_DIR: '.'
+  _LOCATION: 'us-central1'
+  _REPOSITORY: 'serializa-audio-repo'
+  _SERVICE_ACCOUNT: 'genesys-audio-processor@prd-utpbi-data-operation.iam.gserviceaccount.com'
+  _WORKFLOW_SERVICE_ACCOUNT: 'genesys-audio-processor@prd-utpbi-data-operation.iam.gserviceaccount.com'
+  _JOB_NAME: 'prd-utpbi-mentores-evaluacion'
+  _WORKFLOW_NAME: 'prd-utpbi-mentores-evaluacion-pipeline'
+  _SCHEDULER_NAME: 'prd-sch-mentores-evaluacion'
+  _ENABLE_SCHEDULER: 'false'
+  _SCHEDULE: '0 7 * * *'
+  _TIME_ZONE: 'America/Lima'
+  _BQ_LOCATION: 'US'
+  _FIRESTORE_SECRET: 'PromotoresSourceSa'
+steps:
+  - id: tests
+    name: 'python:3.12-slim-bookworm'
+    entrypoint: python
+    args:
+      - '-c'
+      - 'import subprocess,sys; subprocess.check_call([sys.executable,"-m","pip","install","-r","${_SOURCE_DIR}/requirements.txt"]); subprocess.check_call([sys.executable,"-m","unittest","discover","-s","${_SOURCE_DIR}/tests","-v"])'
+    env: ['PYTHONPATH=${_SOURCE_DIR}']
+  - id: build
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/mentores-evaluacion:$BUILD_ID', '${_SOURCE_DIR}']
+  - id: push
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/mentores-evaluacion:$BUILD_ID']
+  - id: deploy
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - 'PY=$$(gcloud info --format="value(basic.python_location)"); "$$PY" "${_SOURCE_DIR}/scripts/deploy.py"'
+    env:
+      - 'PROJECT=$PROJECT_ID'
+      - 'SOURCE_DIR=${_SOURCE_DIR}'
+      - 'LOCATION=${_LOCATION}'
+      - 'REPOSITORY=${_REPOSITORY}'
+      - 'SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}'
+      - 'WORKFLOW_SERVICE_ACCOUNT=${_WORKFLOW_SERVICE_ACCOUNT}'
+      - 'JOB_NAME=${_JOB_NAME}'
+      - 'WORKFLOW_NAME=${_WORKFLOW_NAME}'
+      - 'SCHEDULER_NAME=${_SCHEDULER_NAME}'
+      - 'ENABLE_SCHEDULER=${_ENABLE_SCHEDULER}'
+      - 'SCHEDULE=${_SCHEDULE}'
+      - 'TIME_ZONE=${_TIME_ZONE}'
+      - 'BQ_LOCATION=${_BQ_LOCATION}'
+      - 'FIRESTORE_SECRET=${_FIRESTORE_SECRET}'
+      - 'IMAGE_URI=${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/mentores-evaluacion:$BUILD_ID'
+images:
+  - '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/mentores-evaluacion:$BUILD_ID'
+timeout: '1800s'
+options:
+  logging: CLOUD_LOGGING_ONLY

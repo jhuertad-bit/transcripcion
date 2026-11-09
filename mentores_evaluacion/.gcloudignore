@@ -1,0 +1,8 @@
+.git
+__pycache__
+**/__pycache__
+*.pyc
+*.pem
+*.log
+*credentials*
+*9bd1430535b8*
