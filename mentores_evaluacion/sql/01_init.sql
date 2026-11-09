@@ -151,9 +151,8 @@ CREATE TABLE IF NOT EXISTS `prd-utpbi-data-operation.raw_cita_promotor.hist_ment
 (run_id STRING, started_at TIMESTAMP, finished_at TIMESTAMP, status STRING,
  date_from DATE, date_to DATE, reprocess BOOL, error_detail STRING)
 PARTITION BY DATE(started_at);
-CREATE TABLE IF NOT EXISTS `prd-utpbi-data-operation.raw_cita_promotor.hist_mentores_catalog_snapshots`
-(snapshot_id STRING, published_at TIMESTAMP)
-PARTITION BY DATE(published_at);
+ALTER TABLE `prd-utpbi-data-operation.raw_cita_promotor.hist_mentores_pipeline_runs` ADD COLUMN IF NOT EXISTS catalog_load_id STRING;
+ALTER TABLE `prd-utpbi-data-operation.raw_cita_promotor.hist_mentores_pipeline_runs` ADD COLUMN IF NOT EXISTS catalog_loaded_at TIMESTAMP;
 CREATE TABLE IF NOT EXISTS `prd-utpbi-data-operation.raw_cita_promotor.hist_mentores_ia_respuestas`
 (run_id STRING, evaluated_at TIMESTAMP, uri STRING, full_response JSON,
  clean_json_text STRING, final_json JSON, json_valido BOOL, json_error_tipo STRING)
@@ -161,5 +160,6 @@ PARTITION BY DATE(evaluated_at) CLUSTER BY uri;
 CREATE TABLE IF NOT EXISTS `prd-utpbi-data-operation.raw_cita_promotor.hist_mentores_prompt_versions`
 (prompt_name STRING, prompt_sha256 STRING, prompt_text STRING, registered_at TIMESTAMP);
 CREATE TABLE IF NOT EXISTS `prd-utpbi-data-operation.raw_cita_promotor.hist_mentores_execution_plan`
-(execution_id STRING, process_date DATE, snapshot_id STRING, created_at TIMESTAMP)
+(execution_id STRING, process_date DATE, catalog_load_id STRING, created_at TIMESTAMP)
 PARTITION BY process_date CLUSTER BY execution_id;
+ALTER TABLE `prd-utpbi-data-operation.raw_cita_promotor.hist_mentores_execution_plan` ADD COLUMN IF NOT EXISTS catalog_load_id STRING;

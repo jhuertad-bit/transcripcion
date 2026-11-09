@@ -6,7 +6,7 @@ CREATE OR REPLACE PROCEDURE `prd-utpbi-data-operation.raw_cita_promotor.sp_proce
   IN p_reprocess BOOL,
   IN p_run_id STRING,
   IN p_lock_owner STRING,
-  IN p_snapshot_id STRING
+  IN p_catalog_load_id STRING
 )
 OPTIONS(strict_mode=FALSE, description='Speech Analytics Mentores: control, evaluacion IA, historico y publicacion final. Invocar mediante el Workflow.')
 BEGIN
@@ -26,13 +26,20 @@ DECLARE v_cantidad_respuestas_error INT64 DEFAULT 0;
 ASSERT p_date_from IS NOT NULL AND p_date_to IS NOT NULL
   AND p_date_from = p_date_to AND p_reprocess IS NOT NULL AS 'PARAMETROS_INVALIDOS_UN_DIA_POR_LLAMADA';
 ASSERT REGEXP_CONTAINS(p_run_id, r'^[a-f0-9]{32}$') AS 'RUN_ID_INVALIDO';
-ASSERT EXISTS (SELECT 1 FROM `prd-utpbi-data-operation.raw_cita_promotor.hist_mentores_catalog_snapshots`
-  WHERE snapshot_id=p_snapshot_id) AS 'SNAPSHOT_NO_PUBLICADO';
 ASSERT (SELECT COUNT(*) = 1 FROM `prd-utpbi-data-operation.raw_cita_promotor.mentores_pipeline_lock`
   WHERE lock_id='pipeline' AND owner=p_lock_owner
     AND STARTS_WITH(owner, CONCAT(p_run_id, '_')) AND expires_at>CURRENT_TIMESTAMP())
   AS 'EJECUTAR_DESDE_WORKFLOW_CON_BLOQUEO';
 
+ASSERT (SELECT COUNT(*)>0 AND COUNT(DISTINCT catalog_load_id)=1
+  AND MIN(catalog_load_id)=p_catalog_load_id FROM `prd-utpbi-data-operation.raw_cita_promotor.cat_audios_mentores_firestore`)
+  AS 'CATALOGO_CAMBIO_REINICIAR_WORKFLOW';
+ASSERT (SELECT COUNT(*)>0 AND COUNT(DISTINCT catalog_load_id)=1
+  AND MIN(catalog_load_id)=p_catalog_load_id FROM `prd-utpbi-data-operation.raw_cita_promotor.cat_mentores_firestore`)
+  AS 'CATALOGO_CAMBIO_REINICIAR_WORKFLOW';
+ASSERT (SELECT COUNT(*)>0 AND COUNT(DISTINCT catalog_load_id)=1
+  AND MIN(catalog_load_id)=p_catalog_load_id FROM `prd-utpbi-data-operation.raw_cita_promotor.cat_dias_utp`)
+  AS 'CATALOGO_CAMBIO_REINICIAR_WORKFLOW';
 SET @@query_label = "project:mentores,component:mentores_pipeline,env:prd,team:data";
 
 -- Consolidacion determinista de subatributos para la tabla final.
@@ -103,20 +110,20 @@ WITH audios_base AS (
   SELECT source_gcs_uri, COUNT(*) AS coincidencias,
     ANY_VALUE(STRUCT(audio_id, firestore_path, mentor_id, activityid,
       promotor_email, tipo_charla_mentor, tipos_charla_mentor_json)) AS dato
-  FROM `prd-utpbi-data-operation.raw_cita_promotor.hist_maestro_audios_mentores_firestore`
-  WHERE snapshot_id=p_snapshot_id AND source_gcs_uri IS NOT NULL
+  FROM `prd-utpbi-data-operation.raw_cita_promotor.cat_audios_mentores_firestore`
+  WHERE catalog_load_id=p_catalog_load_id AND source_gcs_uri IS NOT NULL
   GROUP BY source_gcs_uri
 ), mentores_maestro AS (
   SELECT mentor_id, COUNT(*) AS coincidencias,
     ANY_VALUE(STRUCT(mentor_nombre, mentor_email, campus)) AS dato
-  FROM `prd-utpbi-data-operation.raw_cita_promotor.hist_maestro_mentores_firestore`
-  WHERE snapshot_id=p_snapshot_id
+  FROM `prd-utpbi-data-operation.raw_cita_promotor.cat_mentores_firestore`
+  WHERE catalog_load_id=p_catalog_load_id
   GROUP BY mentor_id
 ), eventos_maestro AS (
   SELECT doc_id, COUNT(*) AS coincidencias,
     ANY_VALUE(STRUCT(colegio, codigoModular, campus, fechaEvento)) AS dato
-  FROM `prd-utpbi-data-operation.raw_cita_promotor.hist_dias_utp`
-  WHERE snapshot_id=p_snapshot_id
+  FROM `prd-utpbi-data-operation.raw_cita_promotor.cat_dias_utp`
+  WHERE catalog_load_id=p_catalog_load_id
   GROUP BY doc_id
 ), unidos AS (
   SELECT audios.*,

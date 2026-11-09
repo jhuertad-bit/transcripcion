@@ -12,7 +12,7 @@ PROJECT = "prd-utpbi-data-operation"
 RAW = f"{PROJECT}.raw_cita_promotor"
 SQL = Path(__file__).resolve().parents[1] / "sql"
 PROCEDURE = f"{RAW}.sp_process_speech_analytics_mentores"
-PROCESS_CALL = f"CALL `{PROCEDURE}`(@date_from, @date_to, @reprocess, @run_id, @owner, @snapshot_id);"
+PROCESS_CALL = f"CALL `{PROCEDURE}`(@date_from, @date_to, @reprocess, @run_id, @owner, @catalog_load_id);"
 
 
 def parameters(env):
@@ -42,14 +42,14 @@ def main():
     parser.add_argument("action", nargs="?", choices=["init", "prepare", "run"], default="run")
     action = parser.parse_args().action
     first, last, reprocess, run_id = parameters(os.environ)
-    if action == "run" and (first != last or not os.getenv("SNAPSHOT_ID")):
-        raise ValueError("Ejecutar mediante Workflow: run requiere un solo dia y SNAPSHOT_ID")
+    if action == "run" and (first != last or not os.getenv("CATALOG_LOAD_ID")):
+        raise ValueError("Ejecutar mediante Workflow: run requiere un solo dia y CATALOG_LOAD_ID")
     client = bigquery.Client(project=PROJECT, location=os.getenv("BQ_LOCATION", "US"))
     params = [bigquery.ScalarQueryParameter("date_from", "DATE", first),
               bigquery.ScalarQueryParameter("date_to", "DATE", last),
               bigquery.ScalarQueryParameter("reprocess", "BOOL", reprocess),
               bigquery.ScalarQueryParameter("run_id", "STRING", run_id)]
-    params.extend([bigquery.ScalarQueryParameter("snapshot_id", "STRING", os.getenv("SNAPSHOT_ID", run_id)),
+    params.extend([bigquery.ScalarQueryParameter("catalog_load_id", "STRING", os.getenv("CATALOG_LOAD_ID") or run_id),
                    bigquery.ScalarQueryParameter("execution_id", "STRING", os.getenv("RUN_ID", run_id)),
                    bigquery.ScalarQueryParameter("explicit_range", "BOOL", bool(os.getenv("DATE_FROM")))])
 
@@ -112,9 +112,9 @@ COMMIT TRANSACTION;""")
             return
         query(f"""MERGE `{RAW}.hist_mentores_pipeline_runs` t USING (SELECT @run_id AS run_id) s
 ON t.run_id=s.run_id WHEN NOT MATCHED THEN
-INSERT(run_id,started_at,status,date_from,date_to,reprocess)
-VALUES(@run_id,CURRENT_TIMESTAMP(),'RUNNING',@date_from,@date_to,@reprocess)
-WHEN MATCHED THEN UPDATE SET status='RUNNING', error_detail=NULL;""")
+INSERT(run_id,started_at,status,date_from,date_to,reprocess,catalog_load_id)
+VALUES(@run_id,CURRENT_TIMESTAMP(),'RUNNING',@date_from,@date_to,@reprocess,@catalog_load_id)
+WHEN MATCHED THEN UPDATE SET status='RUNNING', error_detail=NULL,catalog_load_id=@catalog_load_id;""")
         if action == "prepare":
             catalogs.publish(client, RAW, run_id, os.getenv("FIRESTORE_PROJECT", "citapromotor-utp"), query)
             query(plan_sql(), job_id="mentores_plan_" + run_id)
@@ -133,7 +133,7 @@ WHEN MATCHED THEN UPDATE SET status='RUNNING', error_detail=NULL;""")
 
 def plan_sql():
     final = f"{PROJECT}.adf_speech_analytics.hist_utp_gen_ia_results_process_data_mentores_prd"
-    return f"""INSERT INTO `{RAW}.hist_mentores_execution_plan`
+    return f"""INSERT INTO `{RAW}.hist_mentores_execution_plan` (execution_id,process_date,catalog_load_id,created_at)
 SELECT @execution_id, day, @run_id, CURRENT_TIMESTAMP()
 FROM (
  SELECT day FROM UNNEST(GENERATE_DATE_ARRAY(@date_from,@date_to)) day WHERE @explicit_range

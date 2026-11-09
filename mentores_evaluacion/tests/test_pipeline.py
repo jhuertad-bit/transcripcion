@@ -37,14 +37,18 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("AND DATE(fecha_audio) >= p_date_from", s)
         self.assertNotIn("NOT p_reprocess OR DATE(fecha_audio)", s)
         self.assertIn("p_date_from = p_date_to", s)
-        self.assertEqual(s.count("WHERE snapshot_id=p_snapshot_id"), 4)
+        self.assertEqual(s.count("WHERE catalog_load_id=p_catalog_load_id"), 3)
+        self.assertEqual(s.count("AS 'CATALOGO_CAMBIO_REINICIAR_WORKFLOW'"), 3)
+        self.assertNotIn("hist_mentores_catalog_snapshots", s)
+        self.assertNotIn("hist_dias_utp", s)
+        self.assertIn("raw_cita_promotor.cat_dias_utp", s)
         self.assertNotIn("@date_from", s)
 
     def test_job_calls_persistent_procedure_with_bound_parameters(self):
-        self.assertEqual(PROCESS_CALL, f"CALL `{PROCEDURE}`(@date_from, @date_to, @reprocess, @run_id, @owner, @snapshot_id);")
+        self.assertEqual(PROCESS_CALL, f"CALL `{PROCEDURE}`(@date_from, @date_to, @reprocess, @run_id, @owner, @catalog_load_id);")
         s = (ROOT / "sql" / "02_sp_process.sql").read_text(encoding="utf-8")
         self.assertIn(f"CREATE OR REPLACE PROCEDURE `{PROCEDURE}`", s)
-        for name in ("p_date_from DATE", "p_date_to DATE", "p_reprocess BOOL", "p_run_id STRING", "p_lock_owner STRING", "p_snapshot_id STRING"):
+        for name in ("p_date_from DATE", "p_date_to DATE", "p_reprocess BOOL", "p_run_id STRING", "p_lock_owner STRING", "p_catalog_load_id STRING"):
             self.assertIn("IN " + name, s)
 
     def test_init_does_not_replace_history(self):
@@ -52,6 +56,8 @@ class PipelineTests(unittest.TestCase):
         self.assertNotIn("CREATE OR REPLACE TABLE", ddl)
         self.assertNotIn("DROP TABLE", ddl)
         self.assertIn("hist_utp_gen_ia_results_process_data_mentores_prd", ddl)
+        self.assertNotIn("hist_mentores_catalog_snapshots", ddl)
+        self.assertIn("ADD COLUMN IF NOT EXISTS catalog_load_id", ddl)
 
     def test_no_local_credentials_or_audio_copy_in_runtime(self):
         for file in (ROOT / "worker").glob("*.py"):

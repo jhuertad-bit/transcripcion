@@ -10,14 +10,14 @@ class DailyWorkflowTests(unittest.TestCase):
         self.workflow = yaml.safe_load((ROOT / "workflows" / "daily_pipeline.yaml").read_text(encoding="utf-8"))
         self.steps = {key: value for step in self.workflow["main"]["steps"] for key, value in step.items()}
 
-    def test_catalogs_precede_sequential_days_and_snapshot_is_pinned(self):
+    def test_catalogs_precede_sequential_days_and_catalog_load_is_pinned(self):
         self.assertLess(list(self.steps).index("prepare_catalogs_and_plan"), list(self.steps).index("each_day"))
         self.assertEqual(self.steps["prepare_catalogs_and_plan"]["args"]["action"], "prepare")
         loop = self.steps["each_day"]
         self.assertNotIn("parallel", loop)
         action = loop["for"]["steps"][0]["process_day"]
         self.assertEqual(action["args"]["date_from"], action["args"]["date_to"])
-        self.assertEqual(action["args"]["snapshot_id"], "${row.f[1].v}")
+        self.assertEqual(action["args"]["catalog_load_id"], "${row.f[1].v}")
         self.assertIn("row.f[0].v", action["args"]["run_id"])
         self.assertNotIn("try", action)
         self.assertNotIn("retry", action)

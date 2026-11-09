@@ -83,8 +83,8 @@ Los DDL de tablas son de inicializacion y pueden repetirse porque usan `IF NOT E
 No es necesario correrlos manualmente antes de cada procesamiento.
 
 El Job llama al SP con parametros vinculados: `date_from`, `date_to`, `reprocess`, `run_id`,
-el token interno `owner` del bloqueo y `snapshot_id`. El SP exige una sola fecha por llamada,
-valida el bloqueo y consulta la fotografia de catalogos indicada antes de modificar datos.
+el token interno `owner` del bloqueo y `catalog_load_id`. El SP exige una sola fecha por llamada,
+valida el bloqueo y la carga vigente de catalogos antes de modificar datos.
 Se ejecuta mediante el Workflow con impersonacion, para mantener la carga previa de catalogos,
 auditoria y control de concurrencia. Un `CALL` aislado sin bloqueo es rechazado.
 No se incluyen ejecuciones de prueba con fechas fijas dentro del archivo de despliegue del SP.
@@ -122,8 +122,10 @@ El Workflow primero ejecuta el Job en modo `prepare`: carga los tres catalogos u
 y guarda un plan de fechas en BigQuery. Luego recorre ese plan en orden ascendente con un
 bucle secuencial: por cada fecha inicia una ejecucion independiente del Job, espera su
 finalizacion y solo entonces inicia la siguiente. Cada llamada al SP procesa un solo dia.
-Todos los dias del rango usan la misma fotografia de catalogos, aunque otro flujo publique
-una fotografia mas reciente. El timeout del Job se aplica por fecha, no al rango completo.
+Los catalogos se cargan una sola vez al inicio del rango. Cada dia valida `catalog_load_id`
+para evitar mezclar cargas. Si otro Workflow reemplaza los catalogos entre dos dias, el
+anterior se detiene con `CATALOGO_CAMBIO_REINICIAR_WORKFLOW`; puede iniciarse de nuevo desde
+la fecha pendiente. El timeout del Job se aplica por fecha, no al rango completo.
 
 Con fechas explicitas, el plan contiene todos los dias del rango inclusivo. `reprocess=true`
 fuerza una nueva evaluacion; con false se reutilizan los resultados vigentes. Con `{}`, busca
@@ -143,18 +145,16 @@ Todos los siguientes objetos estan en `prd-utpbi-data-operation.raw_cita_promoto
 
 | Objeto | Contenido |
 |---|---|
-| `hist_maestro_mentores_firestore` | Fotografia de mentores por snapshot |
-| `hist_maestro_audios_mentores_firestore` | Fotografia de metadatos de audio por snapshot |
-| `hist_dias_utp` | Fotografia de eventos por snapshot |
-| `hist_mentores_catalog_snapshots` | Fotografias publicadas completas |
-| `maestro_mentores_firestore`, `maestro_audios_mentores_firestore`, `dias_utp` | Vistas de la ultima fotografia publicada |
+| `cat_mentores_firestore` | Catalogo vigente de mentores |
+| `cat_audios_mentores_firestore` | Catalogo vigente de metadatos de audio |
+| `cat_dias_utp` | Catalogo vigente de eventos |
 | `hist_mentores_audio_control` | Estado actual por URI |
 | `hist_mentores_control_ejecucion` | Copia del control por ejecucion |
 | `hist_mentores_evaluaciones` | Todas las versiones validas de evaluaciones |
 | `hist_mentores_ia_respuestas` | Respuestas IA validas y fallidas por ejecucion |
 | `sys_prompts`, `hist_mentores_prompt_versions` | Prompt vigente y versiones del texto |
 | `hist_mentores_pipeline_runs` | Fechas, estado y error de cada ejecucion |
-| `hist_mentores_execution_plan` | Fechas ordenadas y fotografia de catalogos por Workflow |
+| `hist_mentores_execution_plan` | Fechas ordenadas y carga de catalogos por Workflow |
 | `mentores_pipeline_lock` | Exclusividad de la ejecucion |
 
 Destino final:
@@ -162,12 +162,53 @@ Destino final:
 Conserva el ultimo resultado valido por URI. Sus versiones anteriores permanecen en
 `raw_cita_promotor.hist_mentores_evaluaciones`.
 
-Las tres fotografias y su marca de publicacion se insertan en una transaccion. Una falla
-conserva la fotografia publicada anterior. Los resultados, sus versiones y el estado final de
-control tambien se publican en una transaccion. Nunca se reemplaza toda una tabla historica.
-Un reproceso usa los catalogos vigentes al ejecutarse; no reconstruye el estado pasado de TRUE.
-El SP lee directamente las tablas historicas filtradas por el `snapshot_id` del plan; las vistas
-de ultima fotografia siguen disponibles para consultas externas.
+### Catalogos: solo el estado actual
+
+La extraccion sigue siendo completa: mentores desde `mentores`, eventos desde `dias_utp`
+y metadatos desde `mentor_charlas/.../audios`. No es una extraccion incremental. Las llaves
+validadas son `mentor_id`, `doc_id` y `firestore_path`, respectivamente. No se usa `audio_id`
+solo como llave, porque puede repetirse entre charlas. Los cruces del SP permanecen por
+`source_gcs_uri`, `mentor_id` y `activityid = doc_id`.
+
+La carga primero extrae y valida los tres catalogos completos. Rechaza catalogos vacios,
+llaves vacias/duplicadas y rutas incoherentes. Despues carga tres tablas de trabajo con
+vencimiento de dos dias y publica juntas las tres tablas vigentes mediante una transaccion
+`DELETE + INSERT`. Si una extraccion, carga o publicacion falla, se conserva el contenido
+vigente anterior. `WRITE_TRUNCATE` se usa solamente en las tablas de trabajo.
+
+Los catalogos vigentes no acumulan fotografias: cada tabla conserva una sola carga,
+identificada por `catalog_load_id` y `fecha_carga`. Su volumen de filas depende del catalogo
+actual y no del numero de ejecuciones. BigQuery puede conservar versiones de almacenamiento
+segun su configuracion de time travel, aunque no se guarden fotografias como filas adicionales.
+`hist_mentores_pipeline_runs.catalog_loaded_at` conserva la fecha/hora de publicacion de
+cada carga, incluso despues de reemplazar los catalogos. Las ejecuciones diarias guardan
+`catalog_load_id` para relacionar cada evaluacion con esa carga.
+
+Los resultados, sus versiones y el estado final de control se publican en una transaccion.
+Los historicos de evaluaciones, respuestas IA, versiones de prompts y ejecuciones siguen
+agregando registros. En particular, las evaluaciones conservan los datos del mentor y evento
+usados para ese resultado; el texto de cada version del prompt queda en su tabla de versiones.
+Un reproceso usa los catalogos vigentes: no reconstruye el catalogo completo de una fecha pasada.
+
+### Migracion desde la version con fotografias
+
+El Build crea las nuevas tablas `cat_*`, agrega `catalog_load_id` a las tablas existentes
+de ejecuciones y planificacion, y `catalog_loaded_at` en ejecuciones, si hace falta;
+actualiza el SP y el Workflow. No requiere
+editar las variables del activador. La primera ejecucion manual llena los catalogos nuevos.
+
+Esta version ya no crea ni alimenta `hist_maestro_mentores_firestore`,
+`hist_maestro_audios_mentores_firestore`, `hist_dias_utp` ni `hist_mentores_catalog_snapshots`;
+tampoco crea las vistas antiguas `maestro_mentores_firestore`, `maestro_audios_mentores_firestore`
+y `dias_utp`. Los objetos que dejo una version anterior se conservan, pero ya no son consumidos
+por este SP. No se borran automaticamente ni se libera su espacio por el simple redespliegue.
+Su eliminacion debe revisarse por separado despues de validar el flujo actualizado.
+
+Para actualizar un repositorio existente con el ZIP de actualizacion de catalogos, copiar
+sus archivos sobre `mentores_evaluacion/` sin eliminar la carpeta. Ese ZIP excluye
+`sql/laboratorio.md` y `sql/auditorio.md` para conservar los prompts ya actualizados en Git.
+Las variables del activador siguen iguales; despues del commit/push debe completarse
+un nuevo Build para aplicar los catalogos vigentes, la migracion aditiva y el SP actualizado.
 
 ## Concurrencia, errores y limites
 
@@ -194,9 +235,9 @@ en modo normal; usar `reprocess=true` para forzar una nueva evaluacion del rango
 Una ejecucion puede completar con audios pendientes o con errores de IA; revisar las tablas
 de control y respuestas. `SUCCESS` significa que el pipeline completo su publicacion.
 
-Las tablas ya existentes deben tener el esquema de este paquete: `init` no migra esquemas
-ni importa datos desde `raw_genesys_audios`. Si un nombre de vista ya pertenece a una tabla,
-BigQuery rechaza el cambio en vez de eliminar la tabla existente.
+Las tablas ya existentes deben tener el esquema de este paquete. `init` solo aplica la
+migracion aditiva de `catalog_load_id` y no importa datos desde `raw_genesys_audios` ni borra
+tablas antiguas. Se usan nombres `cat_*` para no colisionar con las tablas o vistas anteriores.
 
 ## Desarrollo y validacion local
 
@@ -209,6 +250,9 @@ python -m unittest discover -s tests -v
 
 La regeneracion requiere el arbol original de carpetas. El paquete entregado ya contiene
 los SQL, prompts y normalizadores generados; Cloud Build no necesita acceder a las carpetas originales.
+Por defecto, el generador conserva los prompts que ya existen en `sql/`. Solo usar
+`python scripts/prepare_sql.py --refresh-prompts` si se desea reemplazarlos desde los Markdown
+de desarrollo. Para actualizar prompts en Git, editar `sql/laboratorio.md` y `sql/auditorio.md`.
 Las pruebas no ejecutan cargas ni inferencia. Una prueba completa de permisos y ejecucion
 requiere desplegar en Google Cloud y ejecutar un rango controlado.
 El cambio a SP se valido inicialmente con 13 pruebas locales y un dry run de su definicion en BigQuery,
@@ -218,6 +262,9 @@ el dry run no sustituye una ejecucion controlada despues del despliegue.
 La version con bucle secuencial por fecha paso 19 pruebas locales y un nuevo dry run del SP
 con impersonacion. El Workflow se valido estructuralmente; aun no se ha desplegado ni
 ejecutado el rango completo en Google Cloud.
+El cambio a catalogos vigentes paso 20 pruebas locales y dry runs de `01_init.sql` y
+`02_sp_process.sql` con impersonacion. Los dry runs no crean objetos ni ejecutan audios;
+la publicacion completa de catalogos aun requiere una ejecucion en el entorno desplegado.
 
 Referencias de implementacion: [variables Cloud Build](https://docs.cloud.google.com/build/docs/configuring-builds/substitute-variable-values),
 [overrides de Cloud Run](https://docs.cloud.google.com/run/docs/execute/jobs),

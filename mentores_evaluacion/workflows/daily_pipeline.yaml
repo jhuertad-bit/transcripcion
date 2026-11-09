@@ -20,7 +20,7 @@ main:
           date_to: ${date_to}
           reprocess: ${reprocess}
           action: prepare
-          snapshot_id: ""
+          catalog_load_id: ""
     - read_plan:
         call: googleapis.bigquery.v2.jobs.query
         args:
@@ -32,7 +32,7 @@ main:
             maxResults: 1000
             parameterMode: NAMED
             query: >-
-              SELECT FORMAT_DATE('%F',process_date) AS day, snapshot_id
+              SELECT FORMAT_DATE('%F',process_date) AS day, catalog_load_id
               FROM `prd-utpbi-data-operation.raw_cita_promotor.hist_mentores_execution_plan`
               WHERE execution_id=@execution_id ORDER BY process_date
             queryParameters:
@@ -74,7 +74,7 @@ main:
                   date_to: ${row.f[0].v}
                   reprocess: ${reprocess}
                   action: run
-                  snapshot_id: ${row.f[1].v}
+                  catalog_load_id: ${row.f[1].v}
             - count_day:
                 assign:
                   - completed_days: ${completed_days + 1}
@@ -99,7 +99,7 @@ main:
           completed_days: ${completed_days}
 
 run_job:
-  params: [job, run_id, date_from, date_to, reprocess, action, snapshot_id]
+  params: [job, run_id, date_from, date_to, reprocess, action, catalog_load_id]
   steps:
     - execute:
         call: googleapis.run.v2.projects.locations.jobs.run
@@ -119,8 +119,8 @@ run_job:
                       value: ${date_to}
                     - name: REPROCESS
                       value: ${string(reprocess)}
-                    - name: SNAPSHOT_ID
-                      value: ${snapshot_id}
+                    - name: CATALOG_LOAD_ID
+                      value: ${catalog_load_id}
           connector_params:
             timeout: 28800
         result: execution

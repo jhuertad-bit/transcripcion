@@ -1,18 +1,18 @@
-"""Fotografias completas de metadatos Firestore; nunca descarga ni copia audios."""
+"""Catalogos vigentes de Firestore; reemplazo atomico, sin fotografias historicas."""
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from google.cloud import bigquery, firestore
 from worker.normalizers import ESQUEMAS, DIAS_SCHEMA, transformar, transformar_datos
 
-TABLES = {"mentores": "maestro_mentores_firestore", "audios": "maestro_audios_mentores_firestore",
-          "dias": "dias_utp"}
+TABLES = {"mentores": "cat_mentores_firestore", "audios": "cat_audios_mentores_firestore",
+          "dias": "cat_dias_utp"}
 
 
 def schema(kind):
     fields = DIAS_SCHEMA if kind == "dias" else [bigquery.SchemaField(n, t) for n, t in ESQUEMAS[kind]]
-    return list(fields) + [bigquery.SchemaField("snapshot_id", "STRING")]
+    return list(fields) + [bigquery.SchemaField("catalog_load_id", "STRING", mode="REQUIRED")]
 
 
 def document(doc):
@@ -38,7 +38,7 @@ def extract(project):
     finally:
         source.close()
     if not days:
-        raise ValueError("dias_utp vacio: no se publica una fotografia incompleta")
+        raise ValueError("dias_utp vacio: se conserva la carga vigente de catalogos")
     # Valores anidados de Firestore quedan como JSON, como en la carga original.
     events = json.loads(transformar_datos(days).to_json(orient="records", date_format="iso"))
     rows = {"mentores": mentors, "audios": audios, "dias": events}
@@ -51,13 +51,7 @@ def extract(project):
 
 def initialize(client, raw, query):
     for kind, table in TABLES.items():
-        history = bigquery.Table(f"{raw}.hist_{table}", schema=schema(kind))
-        history.time_partitioning = bigquery.TimePartitioning(field="fecha_carga")
-        client.create_table(history, exists_ok=True)
-        query(f"""CREATE OR REPLACE VIEW `{raw}.{table}` AS
-SELECT h.* EXCEPT(snapshot_id) FROM `{raw}.hist_{table}` h
-WHERE snapshot_id = (SELECT snapshot_id FROM `{raw}.hist_mentores_catalog_snapshots`
-                    ORDER BY published_at DESC, snapshot_id DESC LIMIT 1)""")
+        client.create_table(bigquery.Table(f"{raw}.{table}", schema=schema(kind)), exists_ok=True)
 
 
 def publish(client, raw, run_id, source_project, query):
@@ -65,19 +59,21 @@ def publish(client, raw, run_id, source_project, query):
     stages = []
     try:
         for kind, table in TABLES.items():
-            stage = f"{raw}.tmp_snapshot_{kind}_{run_id}"
+            stage = f"{raw}.tmp_catalog_{kind}_{run_id}"
             stages.append(stage)
+            staging = bigquery.Table(stage, schema=schema(kind))
+            staging.expires = datetime.now(timezone.utc) + timedelta(days=2)
+            client.create_table(staging, exists_ok=True)
             config = bigquery.LoadJobConfig(schema=schema(kind), write_disposition="WRITE_TRUNCATE")
-            client.load_table_from_json([dict(v, snapshot_id=run_id) for v in rows[kind]], stage,
+            client.load_table_from_json([dict(v, catalog_load_id=run_id) for v in rows[kind]], stage,
                                        job_config=config).result()
-            query(f"ALTER TABLE `{stage}` SET OPTIONS(expiration_timestamp=TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 2 DAY))")
-        inserts = '\n'.join(f"INSERT INTO `{raw}.hist_{table}` SELECT * FROM `{stage}`;"
+        inserts = '\n'.join(f"DELETE FROM `{raw}.{table}` WHERE TRUE;\n"
+                            f"INSERT INTO `{raw}.{table}` SELECT * FROM `{stage}`;"
                             for table, stage in zip(TABLES.values(), stages))
         query(f"""BEGIN TRANSACTION;
-IF NOT EXISTS (SELECT 1 FROM `{raw}.hist_mentores_catalog_snapshots` WHERE snapshot_id=@run_id) THEN
 {inserts}
-INSERT INTO `{raw}.hist_mentores_catalog_snapshots` VALUES (@run_id, CURRENT_TIMESTAMP());
-END IF;
+UPDATE `{raw}.hist_mentores_pipeline_runs`
+SET catalog_loaded_at=CURRENT_TIMESTAMP() WHERE run_id=@run_id;
 COMMIT TRANSACTION;""")
     finally:
         for stage in stages:

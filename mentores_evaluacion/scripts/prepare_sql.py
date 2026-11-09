@@ -1,5 +1,6 @@
 """Genera la variante productiva. Solo escribe archivos locales; nunca ejecuta SQL."""
 from pathlib import Path
+import argparse
 import ast
 import re
 
@@ -11,7 +12,7 @@ FINAL = f"{PROJECT}.adf_speech_analytics.hist_utp_gen_ia_results_process_data_me
 PROCEDURE = f"{RAW}.sp_process_speech_analytics_mentores"
 
 
-def generate():
+def generate(refresh_prompts=False):
     ddl = (DEV / "01_test_manual_ddl_mentores_gen_ia.sql").read_text(encoding="utf-8")
     ddl = ddl[re.search(r"CREATE (?:OR REPLACE TABLE|TABLE IF NOT EXISTS)", ddl).start():]
     ddl = ddl.replace("CREATE OR REPLACE TABLE", "CREATE TABLE IF NOT EXISTS")
@@ -35,9 +36,8 @@ CREATE TABLE IF NOT EXISTS `{RAW}.hist_mentores_pipeline_runs`
 (run_id STRING, started_at TIMESTAMP, finished_at TIMESTAMP, status STRING,
  date_from DATE, date_to DATE, reprocess BOOL, error_detail STRING)
 PARTITION BY DATE(started_at);
-CREATE TABLE IF NOT EXISTS `{RAW}.hist_mentores_catalog_snapshots`
-(snapshot_id STRING, published_at TIMESTAMP)
-PARTITION BY DATE(published_at);
+ALTER TABLE `{RAW}.hist_mentores_pipeline_runs` ADD COLUMN IF NOT EXISTS catalog_load_id STRING;
+ALTER TABLE `{RAW}.hist_mentores_pipeline_runs` ADD COLUMN IF NOT EXISTS catalog_loaded_at TIMESTAMP;
 CREATE TABLE IF NOT EXISTS `{RAW}.hist_mentores_ia_respuestas`
 (run_id STRING, evaluated_at TIMESTAMP, uri STRING, full_response JSON,
  clean_json_text STRING, final_json JSON, json_valido BOOL, json_error_tipo STRING)
@@ -45,8 +45,9 @@ PARTITION BY DATE(evaluated_at) CLUSTER BY uri;
 CREATE TABLE IF NOT EXISTS `{RAW}.hist_mentores_prompt_versions`
 (prompt_name STRING, prompt_sha256 STRING, prompt_text STRING, registered_at TIMESTAMP);
 CREATE TABLE IF NOT EXISTS `{RAW}.hist_mentores_execution_plan`
-(execution_id STRING, process_date DATE, snapshot_id STRING, created_at TIMESTAMP)
+(execution_id STRING, process_date DATE, catalog_load_id STRING, created_at TIMESTAMP)
 PARTITION BY process_date CLUSTER BY execution_id;
+ALTER TABLE `{RAW}.hist_mentores_execution_plan` ADD COLUMN IF NOT EXISTS catalog_load_id STRING;
 """
     s = (DEV / "02_test_manual_mentores_control_reproceso_gen_ia.sql").read_text(encoding="utf-8")
     s = s[s.index("DECLARE v_fecha_proceso"):]
@@ -109,13 +110,15 @@ PARTITION BY process_date CLUSTER BY execution_id;
         body = body.replace("@" + parameter, "p_" + parameter)
     body = body.replace("AND (NOT p_reprocess OR DATE(fecha_audio) >= p_date_from)",
                         "AND DATE(fecha_audio) >= p_date_from")
-    # Fijar la fotografia de catalogos del rango completo, aunque haya otra preparacion.
-    for table in ("maestro_audios_mentores_firestore", "maestro_mentores_firestore", "dias_utp"):
+    # Usar solo catalogos vigentes; el identificador detecta cambios entre fechas del rango.
+    catalogs = {"maestro_audios_mentores_firestore": "cat_audios_mentores_firestore",
+                "maestro_mentores_firestore": "cat_mentores_firestore", "dias_utp": "cat_dias_utp"}
+    for table, target in catalogs.items():
         source = f"FROM `{RAW}.{table}`"
-        body = body.replace(source, f"FROM `{RAW}.hist_{table}`")
-    body = body.replace("WHERE source_gcs_uri IS NOT NULL", "WHERE snapshot_id=p_snapshot_id AND source_gcs_uri IS NOT NULL")
-    body = body.replace(f"FROM `{RAW}.hist_maestro_mentores_firestore`\n  GROUP BY", f"FROM `{RAW}.hist_maestro_mentores_firestore`\n  WHERE snapshot_id=p_snapshot_id\n  GROUP BY")
-    body = body.replace(f"FROM `{RAW}.hist_dias_utp`\n  GROUP BY", f"FROM `{RAW}.hist_dias_utp`\n  WHERE snapshot_id=p_snapshot_id\n  GROUP BY")
+        body = body.replace(source, f"FROM `{RAW}.{target}`")
+    body = body.replace("WHERE source_gcs_uri IS NOT NULL", "WHERE catalog_load_id=p_catalog_load_id AND source_gcs_uri IS NOT NULL")
+    body = body.replace(f"FROM `{RAW}.cat_mentores_firestore`\n  GROUP BY", f"FROM `{RAW}.cat_mentores_firestore`\n  WHERE catalog_load_id=p_catalog_load_id\n  GROUP BY")
+    body = body.replace(f"FROM `{RAW}.cat_dias_utp`\n  GROUP BY", f"FROM `{RAW}.cat_dias_utp`\n  WHERE catalog_load_id=p_catalog_load_id\n  GROUP BY")
     work_names = set(re.findall(r"tmp_mentores_[a-z_]+", body)) - {"tmp_mentores_external"}
     for name in sorted(work_names, key=len, reverse=True):
         body = body.replace(f"`{RAW}.{name}`", f"`_SESSION.{name}`")
@@ -124,13 +127,16 @@ PARTITION BY process_date CLUSTER BY execution_id;
     guard = f"""ASSERT p_date_from IS NOT NULL AND p_date_to IS NOT NULL
   AND p_date_from = p_date_to AND p_reprocess IS NOT NULL AS 'PARAMETROS_INVALIDOS_UN_DIA_POR_LLAMADA';
 ASSERT REGEXP_CONTAINS(p_run_id, r'^[a-f0-9]{{32}}$') AS 'RUN_ID_INVALIDO';
-ASSERT EXISTS (SELECT 1 FROM `{RAW}.hist_mentores_catalog_snapshots`
-  WHERE snapshot_id=p_snapshot_id) AS 'SNAPSHOT_NO_PUBLICADO';
 ASSERT (SELECT COUNT(*) = 1 FROM `{RAW}.mentores_pipeline_lock`
   WHERE lock_id='pipeline' AND owner=p_lock_owner
     AND STARTS_WITH(owner, CONCAT(p_run_id, '_')) AND expires_at>CURRENT_TIMESTAMP())
   AS 'EJECUTAR_DESDE_WORKFLOW_CON_BLOQUEO';
 
+"""
+    for target in catalogs.values():
+        guard += f"""ASSERT (SELECT COUNT(*)>0 AND COUNT(DISTINCT catalog_load_id)=1
+  AND MIN(catalog_load_id)=p_catalog_load_id FROM `{RAW}.{target}`)
+  AS 'CATALOGO_CAMBIO_REINICIAR_WORKFLOW';
 """
     body = body.replace('SET @@query_label =', guard + 'SET @@query_label =', 1)
     procedure = f"""-- Desplegado por Cloud Build durante init. No evalua audios al crear el SP.
@@ -141,7 +147,7 @@ CREATE OR REPLACE PROCEDURE `{PROCEDURE}`(
   IN p_reprocess BOOL,
   IN p_run_id STRING,
   IN p_lock_owner STRING,
-  IN p_snapshot_id STRING
+  IN p_catalog_load_id STRING
 )
 OPTIONS(strict_mode=FALSE, description='Speech Analytics Mentores: control, evaluacion IA, historico y publicacion final. Invocar mediante el Workflow.')
 BEGIN
@@ -151,7 +157,8 @@ END;
     (sql / "02_sp_process.sql").write_text(procedure, encoding="utf-8")
     for source, target in (("Mentores_Prompt_Laboratorio.md", "laboratorio.md"),
                            ("Mentores_Prompt_Auditorio.md", "auditorio.md")):
-        (sql / target).write_bytes((DEV / source).read_bytes())
+        if refresh_prompts or not (sql / target).exists():
+            (sql / target).write_bytes((DEV / source).read_bytes())
     # Reutilizar exclusivamente normalizacion y esquemas, sin codigo de autenticacion local.
     connections = DEV.parent / "00_Conexiones"
     maestro = ast.parse((connections / "cargar_maestros_mentores.py").read_text(encoding="utf-8"))
@@ -176,4 +183,7 @@ END;
 
 
 if __name__ == "__main__":
-    generate()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--refresh-prompts", action="store_true",
+                        help="Reemplazar los prompts del paquete desde los Markdown de desarrollo")
+    generate(refresh_prompts=parser.parse_args().refresh_prompts)
