@@ -69,6 +69,21 @@ AS (
 -- Reproceso: evalua nuevamente los audios del rango inclusivo solicitado.
 -- =====================================================================================
 
+-- Valida evidencia completa antes de publicar; NULL no se convierte en 0 ni NA.
+CREATE TEMP FUNCTION subatributos_completos_mentor(
+  detalles ARRAY<STRUCT<calificacion STRING, motivo STRING>>
+)
+RETURNS BOOL
+AS (
+  ARRAY_LENGTH(detalles) = 15
+  AND NOT EXISTS (
+    SELECT 1 FROM UNNEST(detalles) AS detalle
+    WHERE detalle.calificacion IS NULL
+      OR UPPER(TRIM(detalle.calificacion)) NOT IN ('1', '0', 'NA')
+      OR NULLIF(TRIM(detalle.motivo), '') IS NULL
+  )
+);
+
 CREATE TEMP TABLE tmp_mentores_control_universo
 AS
 
@@ -517,45 +532,45 @@ AS
       ),
       STRUCT(
         '''
-        puntaje_total FLOAT64,
-        b1_comunicacion_oral_resultado STRING,
-        b1_claridad_discurso_calif STRING,
-        b1_claridad_discurso_motivo STRING,
-        b1_estructura_mensaje_calif STRING,
-        b1_estructura_mensaje_motivo STRING,
-        b1_palabras_clave_calif STRING,
-        b1_palabras_clave_motivo STRING,
-        b1_generacion_impacto_resultado STRING,
-        b1_mensajes_motivacionales_calif STRING,
-        b1_mensajes_motivacionales_motivo STRING,
-        b1_cierre_estructurado_calif STRING,
-        b1_cierre_estructurado_motivo STRING,
-        b1_conexion_engagement_resultado STRING,
-        b1_empatia_cercania_calif STRING,
-        b1_empatia_cercania_motivo STRING,
-        b1_interaccion_activacion_publico_calif STRING,
-        b1_interaccion_activacion_publico_motivo STRING,
-        b2_conocimiento_institucional_resultado STRING,
-        b2_precision_informacion_calif STRING,
-        b2_precision_informacion_motivo STRING,
-        b2_cobertura_temas_calif STRING,
-        b2_cobertura_temas_motivo STRING,
-        b2_dominio_narrativa_resultado STRING,
-        b2_storytelling_calif STRING,
-        b2_storytelling_motivo STRING,
-        b2_liderazgo_resultado STRING,
-        b2_cumplimiento_duracion_estructura_calif STRING,
-        b2_cumplimiento_duracion_estructura_motivo STRING,
-        b2_manejo_interrupciones_calif STRING,
-        b2_manejo_interrupciones_motivo STRING,
-        b3_orientacion_servicio_resultado STRING,
-        b3_calidad_respuestas_calif STRING,
-        b3_calidad_respuestas_motivo STRING,
-        b3_seguridad_responder_calif STRING,
-        b3_seguridad_responder_motivo STRING,
-        b3_refuerzo_institucional_calif STRING,
-        b3_refuerzo_institucional_motivo STRING,
-        resumen_general STRING
+        puntaje_total FLOAT64 NOT NULL,
+        b1_comunicacion_oral_resultado STRING NOT NULL,
+        b1_claridad_discurso_calif STRING NOT NULL,
+        b1_claridad_discurso_motivo STRING NOT NULL,
+        b1_estructura_mensaje_calif STRING NOT NULL,
+        b1_estructura_mensaje_motivo STRING NOT NULL,
+        b1_palabras_clave_calif STRING NOT NULL,
+        b1_palabras_clave_motivo STRING NOT NULL,
+        b1_generacion_impacto_resultado STRING NOT NULL,
+        b1_mensajes_motivacionales_calif STRING NOT NULL,
+        b1_mensajes_motivacionales_motivo STRING NOT NULL,
+        b1_cierre_estructurado_calif STRING NOT NULL,
+        b1_cierre_estructurado_motivo STRING NOT NULL,
+        b1_conexion_engagement_resultado STRING NOT NULL,
+        b1_empatia_cercania_calif STRING NOT NULL,
+        b1_empatia_cercania_motivo STRING NOT NULL,
+        b1_interaccion_activacion_publico_calif STRING NOT NULL,
+        b1_interaccion_activacion_publico_motivo STRING NOT NULL,
+        b2_conocimiento_institucional_resultado STRING NOT NULL,
+        b2_precision_informacion_calif STRING NOT NULL,
+        b2_precision_informacion_motivo STRING NOT NULL,
+        b2_cobertura_temas_calif STRING NOT NULL,
+        b2_cobertura_temas_motivo STRING NOT NULL,
+        b2_dominio_narrativa_resultado STRING NOT NULL,
+        b2_storytelling_calif STRING NOT NULL,
+        b2_storytelling_motivo STRING NOT NULL,
+        b2_liderazgo_resultado STRING NOT NULL,
+        b2_cumplimiento_duracion_estructura_calif STRING NOT NULL,
+        b2_cumplimiento_duracion_estructura_motivo STRING NOT NULL,
+        b2_manejo_interrupciones_calif STRING NOT NULL,
+        b2_manejo_interrupciones_motivo STRING NOT NULL,
+        b3_orientacion_servicio_resultado STRING NOT NULL,
+        b3_calidad_respuestas_calif STRING NOT NULL,
+        b3_calidad_respuestas_motivo STRING NOT NULL,
+        b3_seguridad_responder_calif STRING NOT NULL,
+        b3_seguridad_responder_motivo STRING NOT NULL,
+        b3_refuerzo_institucional_calif STRING NOT NULL,
+        b3_refuerzo_institucional_motivo STRING NOT NULL,
+        resumen_general STRING NOT NULL
         ''' AS output_schema,
         4096 AS max_output_tokens,
         0 AS temperature
@@ -762,6 +777,23 @@ AS
       SAFE.PARSE_JSON(clean_json_text) AS final_json,
       (
         (COALESCE(status, '') = '' OR fallback_json_valido)
+        AND subatributos_completos_mentor([
+          STRUCT(b1_claridad_discurso_calif AS calificacion, b1_claridad_discurso_motivo AS motivo),
+          STRUCT(b1_estructura_mensaje_calif AS calificacion, b1_estructura_mensaje_motivo AS motivo),
+          STRUCT(b1_palabras_clave_calif AS calificacion, b1_palabras_clave_motivo AS motivo),
+          STRUCT(b1_mensajes_motivacionales_calif AS calificacion, b1_mensajes_motivacionales_motivo AS motivo),
+          STRUCT(b1_cierre_estructurado_calif AS calificacion, b1_cierre_estructurado_motivo AS motivo),
+          STRUCT(b1_empatia_cercania_calif AS calificacion, b1_empatia_cercania_motivo AS motivo),
+          STRUCT(b1_interaccion_activacion_publico_calif AS calificacion, b1_interaccion_activacion_publico_motivo AS motivo),
+          STRUCT(b2_precision_informacion_calif AS calificacion, b2_precision_informacion_motivo AS motivo),
+          STRUCT(b2_cobertura_temas_calif AS calificacion, b2_cobertura_temas_motivo AS motivo),
+          STRUCT(b2_storytelling_calif AS calificacion, b2_storytelling_motivo AS motivo),
+          STRUCT(b2_cumplimiento_duracion_estructura_calif AS calificacion, b2_cumplimiento_duracion_estructura_motivo AS motivo),
+          STRUCT(b2_manejo_interrupciones_calif AS calificacion, b2_manejo_interrupciones_motivo AS motivo),
+          STRUCT(b3_calidad_respuestas_calif AS calificacion, b3_calidad_respuestas_motivo AS motivo),
+          STRUCT(b3_seguridad_responder_calif AS calificacion, b3_seguridad_responder_motivo AS motivo),
+          STRUCT(b3_refuerzo_institucional_calif AS calificacion, b3_refuerzo_institucional_motivo AS motivo)
+        ])
         AND puntaje_total IS NOT NULL
         AND b1_comunicacion_oral_resultado IS NOT NULL
         AND b1_generacion_impacto_resultado IS NOT NULL
@@ -777,6 +809,23 @@ AS
         WHEN COALESCE(status, '') != '' AND NOT fallback_json_valido THEN status
         WHEN resumen_general IS NOT NULL AND CHAR_LENGTH(resumen_general) > 300
         THEN 'RESUMEN_INVALIDO'
+        WHEN NOT subatributos_completos_mentor([
+          STRUCT(b1_claridad_discurso_calif AS calificacion, b1_claridad_discurso_motivo AS motivo),
+          STRUCT(b1_estructura_mensaje_calif AS calificacion, b1_estructura_mensaje_motivo AS motivo),
+          STRUCT(b1_palabras_clave_calif AS calificacion, b1_palabras_clave_motivo AS motivo),
+          STRUCT(b1_mensajes_motivacionales_calif AS calificacion, b1_mensajes_motivacionales_motivo AS motivo),
+          STRUCT(b1_cierre_estructurado_calif AS calificacion, b1_cierre_estructurado_motivo AS motivo),
+          STRUCT(b1_empatia_cercania_calif AS calificacion, b1_empatia_cercania_motivo AS motivo),
+          STRUCT(b1_interaccion_activacion_publico_calif AS calificacion, b1_interaccion_activacion_publico_motivo AS motivo),
+          STRUCT(b2_precision_informacion_calif AS calificacion, b2_precision_informacion_motivo AS motivo),
+          STRUCT(b2_cobertura_temas_calif AS calificacion, b2_cobertura_temas_motivo AS motivo),
+          STRUCT(b2_storytelling_calif AS calificacion, b2_storytelling_motivo AS motivo),
+          STRUCT(b2_cumplimiento_duracion_estructura_calif AS calificacion, b2_cumplimiento_duracion_estructura_motivo AS motivo),
+          STRUCT(b2_manejo_interrupciones_calif AS calificacion, b2_manejo_interrupciones_motivo AS motivo),
+          STRUCT(b3_calidad_respuestas_calif AS calificacion, b3_calidad_respuestas_motivo AS motivo),
+          STRUCT(b3_seguridad_responder_calif AS calificacion, b3_seguridad_responder_motivo AS motivo),
+          STRUCT(b3_refuerzo_institucional_calif AS calificacion, b3_refuerzo_institucional_motivo AS motivo)
+        ]) THEN 'RESPUESTA_INCOMPLETA'
         WHEN puntaje_total IS NULL
           OR b1_comunicacion_oral_resultado IS NULL
           OR b1_generacion_impacto_resultado IS NULL

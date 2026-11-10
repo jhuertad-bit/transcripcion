@@ -89,6 +89,21 @@ Se ejecuta mediante el Workflow con impersonacion, para mantener la carga previa
 auditoria y control de concurrencia. Un `CALL` aislado sin bloqueo es rechazado.
 No se incluyen ejecuciones de prueba con fechas fijas dentro del archivo de despliegue del SP.
 
+### Contrato de salida obligatorio
+
+Los 39 campos de `AI.GENERATE_TABLE.output_schema` se declaran obligatorios con la
+sintaxis validada en este entorno: `campo STRING NOT NULL` o `puntaje_total FLOAT64 NOT NULL`.
+No usar `campo NOT NULL STRING`: el dry run de la funcion lo rechazo.
+La funcion temporal `subatributos_completos_mentor` comprueba las 15 calificaciones
+(`1`, `0` o `NA`) y sus 15 motivos no vacios antes de publicar una evaluacion.
+Los datos faltantes no se rellenan con notas inventadas. Las respuestas incompletas
+siguen rechazandose y los resultados validos previos se conservan.
+
+Este ajuste se aplica en `scripts/prepare_sql.py` y en `sql/02_sp_process.sql`.
+No cambia los textos de los prompts, la rubrica ni la regla de consolidacion vigente de NA.
+El esquema obligatorio refuerza la solicitud, pero su efectividad sobre el audio fallido
+debe comprobarse despues del despliegue. No se agregaron reintentos automaticos de IA.
+
 ## Ejecucion y reproceso
 
 Las ejecuciones manuales se inician con impersonacion explicita de
@@ -265,6 +280,10 @@ ejecutado el rango completo en Google Cloud.
 El cambio a catalogos vigentes paso 20 pruebas locales y dry runs de `01_init.sql` y
 `02_sp_process.sql` con impersonacion. Los dry runs no crean objetos ni ejecutan audios;
 la publicacion completa de catalogos aun requiere una ejecucion en el entorno desplegado.
+El ajuste de respuesta incompleta paso 24 pruebas locales, dry runs del SP y de la llamada
+`AI.GENERATE_TABLE` con los 39 campos obligatorios, y seis casos sinteticos ejecutados en
+BigQuery sobre la funcion de validacion. Estas pruebas no llaman a Gemini, no alteran
+el SP desplegado y no sustituyen la comprobacion posterior con un audio.
 
 Referencias de implementacion: [variables Cloud Build](https://docs.cloud.google.com/build/docs/configuring-builds/substitute-variable-values),
 [overrides de Cloud Run](https://docs.cloud.google.com/run/docs/execute/jobs),

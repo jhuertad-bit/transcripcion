@@ -12,6 +12,55 @@ FINAL = f"{PROJECT}.adf_speech_analytics.hist_utp_gen_ia_results_process_data_me
 PROCEDURE = f"{RAW}.sp_process_speech_analytics_mentores"
 
 
+def harden_response_contract(sql):
+    """Exige los 39 campos y rechaza subatributos ausentes sin inventar notas."""
+    match = re.search(r"'''(?P<schema>[\s\S]*?)''' AS output_schema", sql)
+    if match is None:
+        raise ValueError("No se encontro output_schema")
+    fields = re.findall(r"^[ \t]*([a-z0-9_]+)[ \t]+(?:NOT NULL[ \t]+)?(FLOAT64|STRING)(?:[ \t]+NOT NULL)?[ \t]*,?[ \t]*$",
+                        match.group("schema"), re.M)
+    if len(fields) != 39:
+        raise ValueError(f"Se esperaban 39 columnas; se encontraron {len(fields)}")
+    schema = re.sub(r"^([ \t]*[a-z0-9_]+)[ \t]+(?:NOT NULL[ \t]+)?(FLOAT64|STRING)(?:[ \t]+NOT NULL)?([ \t]*,?[ \t]*)$",
+                    r"\1 \2 NOT NULL\3", match.group("schema"), flags=re.M)
+    sql = sql[:match.start("schema")] + schema + sql[match.end("schema"):]
+    if "CREATE TEMP FUNCTION subatributos_completos_mentor(" in sql:
+        return sql
+    names = {name for name, _ in fields}
+    pairs = [(name, name[:-len("_calif")] + "_motivo") for name, _ in fields if name.endswith("_calif")]
+    if len(pairs) != 15 or any(motivo not in names for _, motivo in pairs):
+        raise ValueError("Se requieren 15 calificaciones con sus motivos")
+    function = """-- Valida evidencia completa antes de publicar; NULL no se convierte en 0 ni NA.
+CREATE TEMP FUNCTION subatributos_completos_mentor(
+  detalles ARRAY<STRUCT<calificacion STRING, motivo STRING>>
+)
+RETURNS BOOL
+AS (
+  ARRAY_LENGTH(detalles) = 15
+  AND NOT EXISTS (
+    SELECT 1 FROM UNNEST(detalles) AS detalle
+    WHERE detalle.calificacion IS NULL
+      OR UPPER(TRIM(detalle.calificacion)) NOT IN ('1', '0', 'NA')
+      OR NULLIF(TRIM(detalle.motivo), '') IS NULL
+  )
+);
+
+"""
+    anchor = "CREATE TEMP TABLE tmp_mentores_control_universo"
+    if sql.count(anchor) != 1:
+        raise ValueError("No se encontro el inicio del proceso")
+    sql = sql.replace(anchor, function + anchor, 1)
+    rows = ",\n".join(f"          STRUCT({calif} AS calificacion, {motivo} AS motivo)" for calif, motivo in pairs)
+    check = "subatributos_completos_mentor([\n" + rows + "\n        ])"
+    valid_anchor = "        AND puntaje_total IS NOT NULL"
+    error_anchor = "        WHEN puntaje_total IS NULL"
+    if sql.count(valid_anchor) != 1 or sql.count(error_anchor) != 1:
+        raise ValueError("No se encontraron las validaciones de respuesta")
+    sql = sql.replace(valid_anchor, "        AND " + check + "\n" + valid_anchor, 1)
+    sql = sql.replace(error_anchor, "        WHEN NOT " + check + " THEN 'RESPUESTA_INCOMPLETA'\n" + error_anchor, 1)
+    return sql
+
+
 def generate(refresh_prompts=False):
     ddl = (DEV / "01_test_manual_ddl_mentores_gen_ia.sql").read_text(encoding="utf-8")
     ddl = ddl[re.search(r"CREATE (?:OR REPLACE TABLE|TABLE IF NOT EXISTS)", ddl).start():]
@@ -156,7 +205,7 @@ BEGIN
 {body}
 END;
 """
-    (sql / "02_sp_process.sql").write_text(procedure, encoding="utf-8")
+    (sql / "02_sp_process.sql").write_text(harden_response_contract(procedure), encoding="utf-8")
     for source, target in (("Mentores_Prompt_Laboratorio.md", "laboratorio.md"),
                            ("Mentores_Prompt_Auditorio.md", "auditorio.md")):
         if refresh_prompts or not (sql / target).exists():
