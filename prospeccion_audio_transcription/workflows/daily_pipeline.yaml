@@ -34,8 +34,8 @@ main:
                               value: ${args.fecha_desde}
                             - name: PROCESS_DAY_TO
                               value: ${args.fecha_hasta}
-                connector_params:
-                  timeout: 14400
+                  connector_params:
+                    timeout: 14400
             - manifest_path:
                 assign:
                   - uri: ${root + "/" + origin + "/" + batch + ".json"}
@@ -68,8 +68,8 @@ main:
                               value: ${origin}
                             - name: MANIFEST_URI
                               value: ${uri}
-                connector_params:
-                  timeout: 86400
+                  connector_params:
+                    timeout: 86400
             - summarize:
                 assign:
                   - summary:
