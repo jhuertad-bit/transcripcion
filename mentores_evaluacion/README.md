@@ -144,9 +144,17 @@ la fecha pendiente. El timeout del Job se aplica por fecha, no al rango completo
 
 Con fechas explicitas, el plan contiene todos los dias del rango inclusivo. `reprocess=true`
 fuerza una nueva evaluacion; con false se reutilizan los resultados vigentes. Con `{}`, busca
-fechas hasta ayer en Lima con audios nuevos, pendientes, errores o cambios de hash del prompt;
-incluye los ingresos tardios. Si no hay fechas candidatas, termina con cero dias procesados.
-El primer recorrido puede evaluar todo el pendiente historico, separado por dia.
+unicamente el dia de ayer en Lima con audios nuevos, pendientes, errores o cambios de hash del prompt.
+Si no hay audios candidatos de ayer, termina con cero dias procesados.
+Los pendientes historicos y los ingresos tardios de dias anteriores requieren una ejecucion
+manual con fechas explicitas; nunca se acumulan en la carga diaria automatica.
+La carga diaria ejecuta el dia seleccionado una vez y realiza exactamente dos pasadas
+adicionales consecutivas, con identificadores distintos y `reprocess=false`. Las tres
+comparten la fecha y el catalogo del plan original, incluso si cruzan medianoche.
+Las pasadas adicionales evaluan solo audios pendientes o con error; reutilizan los resultados
+completados. Si no hay pendientes elegibles, no llaman al modelo. Despues de la segunda
+pasada adicional, los errores restantes requieren reproceso manual. Los rangos manuales
+no reciben estas dos pasadas automaticas.
 `process_date` corresponde al dia que se esta procesando; `fecha_audio` conserva la fecha
 original del audio.
 
@@ -238,8 +246,8 @@ Si un dia falla tecnicamente, el Workflow se detiene y no inicia las fechas sigu
 Los dias que ya terminaron conservan sus resultados. Para continuar, iniciar otro Workflow
 desde la fecha fallida hasta el final del rango. Un reproceso forzado del rango original
 volveria a evaluar tambien las fechas ya completadas.
-Los errores individuales de IA quedan registrados y pendientes de revision/reintento; el
-bucle puede continuar cuando el Job termina y publica correctamente su estado de control.
+Los errores individuales de IA quedan registrados: en la carga diaria se intentan recuperar
+en las dos pasadas adicionales; el bucle continua cuando el Job publica su estado de control.
 Si un solo dia tiene un volumen excesivo, sera necesario dividir ese dia en lotes adicionales;
 esta version limita por fecha, no por cantidad de audios.
 

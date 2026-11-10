@@ -139,7 +139,7 @@ FROM (
  SELECT day FROM UNNEST(GENERATE_DATE_ARRAY(@date_from,@date_to)) day WHERE @explicit_range
  UNION DISTINCT
  SELECT DATE(c.fecha_audio) AS day FROM `{RAW}.hist_cita_mentor_audio_catalog` c
- WHERE NOT @explicit_range AND DATE(c.fecha_audio)<=@date_to
+ WHERE NOT @explicit_range AND DATE(c.fecha_audio)=@date_to
    AND c.gcs_uri IS NOT NULL AND c.copy_result='copied'
    AND COALESCE(SAFE_CAST(c.duration_seconds AS FLOAT64),0)>=60
    AND (

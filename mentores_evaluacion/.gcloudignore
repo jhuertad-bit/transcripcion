@@ -1,4 +1,5 @@
 .git
+.test_dependencies/
 __pycache__
 **/__pycache__
 *.pyc
