@@ -1,0 +1,68 @@
+substitutions:
+  _BATCH_MAX_FILES: "1"
+  _CPU: "4"
+  _ENABLE_DIARIZATION: "true"
+  _FILES_PER_WORKER: "1"
+  _HF_SECRET: "prospeccion-hf-token"
+  _HF_SECRET_VERSION: "1"
+  _HF_TOKEN_SOURCE: "manual"
+  _JOB_NAME: "prd-utpbi-prospeccion-audio-transcripcion-gpu"
+  _LOCATION: "europe-west4"
+  _MEMORY: "16Gi"
+  _PARALLELISM: "1"
+  _PROJECT_ID: "prd-utpbi-data-operation"
+  _REPOSITORY: "serializa-audio-repo"
+  _SERVICE_ACCOUNT: "genesys-audio-processor@prd-utpbi-data-operation.iam.gserviceaccount.com"
+  _SOURCE_DIR: "prospeccion_audio_transcription_gpu"
+  _TASK_TIMEOUT: "3600s"
+  _WHISPER_MODEL: "deepdml/faster-whisper-large-v3-turbo-ct2"
+  _WORKFLOW_NAME: "prd-utpbi-prospeccion-audio-pipeline-gpu"
+  _WORKFLOW_SERVICE_ACCOUNT: "genesys-audio-processor@prd-utpbi-data-operation.iam.gserviceaccount.com"
+steps:
+  - id: validate
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args: ['${_SOURCE_DIR}/scripts/cloudbuild_deploy.sh', 'validate']
+    env: &deploy_env
+      - '_BATCH_MAX_FILES=${_BATCH_MAX_FILES}'
+      - '_CPU=${_CPU}'
+      - '_ENABLE_DIARIZATION=${_ENABLE_DIARIZATION}'
+      - '_FILES_PER_WORKER=${_FILES_PER_WORKER}'
+      - '_HF_SECRET=${_HF_SECRET}'
+      - '_HF_SECRET_VERSION=${_HF_SECRET_VERSION}'
+      - '_HF_TOKEN_SOURCE=${_HF_TOKEN_SOURCE}'
+      - '_JOB_NAME=${_JOB_NAME}'
+      - '_LOCATION=${_LOCATION}'
+      - '_MEMORY=${_MEMORY}'
+      - '_PARALLELISM=${_PARALLELISM}'
+      - '_PROJECT_ID=${_PROJECT_ID}'
+      - '_REPOSITORY=${_REPOSITORY}'
+      - '_SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}'
+      - '_SOURCE_DIR=${_SOURCE_DIR}'
+      - '_TASK_TIMEOUT=${_TASK_TIMEOUT}'
+      - '_WHISPER_MODEL=${_WHISPER_MODEL}'
+      - '_WORKFLOW_NAME=${_WORKFLOW_NAME}'
+      - '_WORKFLOW_SERVICE_ACCOUNT=${_WORKFLOW_SERVICE_ACCOUNT}'
+      - 'IMAGE_URI=us-central1-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/prospeccion-audio-transcription-gpu:${BUILD_ID}'
+  - id: tests
+    name: 'python:3.11-slim-bookworm'
+    entrypoint: python
+    args:
+      - '-c'
+      - 'import os, unittest, sys; os.chdir("${_SOURCE_DIR}"); sys.path.insert(0, os.getcwd()); sys.exit(not unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover("tests")).wasSuccessful())'
+  - id: build
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '--build-arg', 'WHISPER_MODEL=${_WHISPER_MODEL}', '-f', '${_SOURCE_DIR}/worker/Dockerfile', '-t', 'us-central1-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/prospeccion-audio-transcription-gpu:${BUILD_ID}', '${_SOURCE_DIR}']
+  - id: push
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-central1-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/prospeccion-audio-transcription-gpu:${BUILD_ID}']
+  - id: deploy
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args: ['${_SOURCE_DIR}/scripts/cloudbuild_deploy.sh', 'deploy']
+    env: *deploy_env
+images:
+  - 'us-central1-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/prospeccion-audio-transcription-gpu:${BUILD_ID}'
+timeout: '3600s'
+options:
+  logging: CLOUD_LOGGING_ONLY

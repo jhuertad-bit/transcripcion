@@ -1,0 +1,81 @@
+main:
+  params: [args]
+  steps:
+    - init:
+        assign:
+          - project: ${sys.get_env("PROJECT_ID")}
+          - location: ${sys.get_env("LOCATION")}
+          - job: ${sys.get_env("JOB_NAME")}
+          - root: ${sys.get_env("MANIFEST_GCS_ROOT")}
+          - batch: ${sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+          - origins: ${default(map.get(args, "tipos_origen"), ["promotor", "mentor"])}
+          - summaries: []
+    - each_origin:
+        for:
+          value: origin
+          in: ${origins}
+          steps:
+            - prepare:
+                call: googleapis.run.v2.projects.locations.jobs.run
+                args:
+                  name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job}
+                  body:
+                    overrides:
+                      taskCount: 1
+                      containerOverrides:
+                        - env:
+                            - name: JOB_ROLE
+                              value: prepare
+                            - name: TIPO_ORIGEN
+                              value: ${origin}
+                            - name: BATCH_ID
+                              value: ${batch}
+                            - name: PROCESS_DAY_FROM
+                              value: ${args.fecha_desde}
+                            - name: PROCESS_DAY_TO
+                              value: ${args.fecha_hasta}
+                  connector_params:
+                    timeout: 14400
+            - manifest_path:
+                assign:
+                  - uri: ${root + "/" + origin + "/" + batch + ".json"}
+                  - parts: ${text.split(text.substring(uri, 5, len(uri)), "/")}
+                  - bucket: ${parts[0]}
+                  - object: ${text.substring(uri, 6 + len(bucket), len(uri))}
+            - read_manifest:
+                call: http.get
+                args:
+                  url: ${"https://storage.googleapis.com/storage/v1/b/" + bucket + "/o/" + text.url_encode(object + ".meta.json") + "?alt=media"}
+                  auth:
+                    type: OAuth2
+                result: manifest
+            - empty:
+                switch:
+                  - condition: ${manifest.body.count == 0}
+                    next: summarize
+            - worker:
+                call: googleapis.run.v2.projects.locations.jobs.run
+                args:
+                  name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job}
+                  body:
+                    overrides:
+                      taskCount: ${manifest.body.task_count}
+                      containerOverrides:
+                        - env:
+                            - name: JOB_ROLE
+                              value: worker
+                            - name: TIPO_ORIGEN
+                              value: ${origin}
+                            - name: MANIFEST_URI
+                              value: ${uri}
+                  connector_params:
+                    timeout: 86400
+            - summarize:
+                assign:
+                  - summary:
+                      tipo_origen: ${origin}
+                      count: ${manifest.body.count}
+                      manifest_uri: ${uri}
+                  - summaries: ${list.concat(summaries, summary)}
+    - done:
+        return: ${summaries}

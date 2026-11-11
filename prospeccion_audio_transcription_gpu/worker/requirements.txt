@@ -1,0 +1,9 @@
+# Rangos iniciales; generar lock de versiones después del primer build validado.
+faster-whisper>=1.2,<2
+pyannote.audio==4.0.7
+torch==2.8.0
+torchaudio==2.8.0
+torchcodec==0.7.0
+soundfile>=0.13,<1
+google-cloud-storage>=3.0,<4
+google-cloud-bigquery>=3.30,<4

@@ -1,0 +1,13 @@
+.gcloudignore
+.git
+.venv/
+**/__pycache__/
+**/*.pyc
+*.zip
+.env
+*.local.yaml
+credentials/
+outputs/
+models/
+*service-account*.json
+*credentials*.json
