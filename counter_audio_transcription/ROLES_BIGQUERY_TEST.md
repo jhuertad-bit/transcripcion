@@ -1,3 +1,18 @@
+> Casos de revisión: al publicar, Desconocido siempre requiere revisión. Si la
+> diarización completada no identifica voces, se guarda una marca de revisión
+> de la grabación (speaker_id null, scope recording), sin invocar Gemini ni
+> inventar voces. El estado completed significa que la etapa terminó, no que
+> la calidad del audio o los roles hayan sido aprobados. Los fallos técnicos
+> y las respuestas con speakers inventados siguen fallando.
+
+> Evidencia inválida: al publicar, solo el speaker afectado se marca
+> Desconocido y requires_review=true. Se conservan proposed_role,
+> proposed_evidence y validation_issues para revisión, sin aceptar las citas
+> inválidas. El archivo queda completed con revisión pendiente; completed no
+> significa que todos los roles estén determinados. No se relajan controles
+> de speakers faltantes, inventados o duplicados. El prompt sigue en v2:
+> los éxitos previos se conservan y se reintentan los fallos del mismo lote.
+
 > Prompt v2: Gemini selecciona segment_id como evidencia. El programa valida
 > que existan y pertenezcan al speaker y copia texto y tiempos originales.
 > Se vuelve a clasificar la muestra completa con counter-roles-v2; v1 permanece
