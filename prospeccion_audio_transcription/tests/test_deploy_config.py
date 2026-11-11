@@ -1,52 +1,46 @@
 import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
-from scripts.render_job_env import build_values, RUNTIME_KEYS
+from unittest.mock import patch
+from scripts.render_job_env import build_values
+from worker.gpu_main import check_gpu
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class DeploymentConfigTests(unittest.TestCase):
+class GPUDeploymentTests(unittest.TestCase):
     def setUp(self):
-        self.template = (ROOT/'config/job.env.example.yaml').read_text(encoding='utf-8')
-        self.build = (ROOT/'cloudbuild.yaml').read_text(encoding='utf-8')
+        self.build = (ROOT/'cloudbuild.yaml').read_text()
         block = self.build.split('substitutions:\n', 1)[1].split('steps:', 1)[0]
         self.env = {k.strip(): json.loads(v.strip()) for k, v in
                     (line.split(':', 1) for line in block.splitlines() if line.strip())}
+        self.template = (ROOT/'config/job.env.example.yaml').read_text()
 
-    def test_every_runtime_value_is_connected(self):
+    def test_gpu_destinations_and_cuda_are_independent(self):
         values = build_values(self.template, self.env)
-        for key in RUNTIME_KEYS:
-            self.assertEqual(values[key], self.env['_' + key])
-            self.assertIn(f"'_{key}=${{{'_' + key}}}'", self.build)
-
-    def test_diarization_and_sources_can_be_overridden(self):
-        self.env.update(_ENABLE_DIARIZATION='false')
-        self.template = self.template.replace('MAX_SPEAKERS: "6"', 'MAX_SPEAKERS: "12"').replace(
-            'prd-utpbi-data-operation.raw_cita_promotor.hist_cita_promotor_audio_catalog',
-            'project.dataset.custom_catalog')
-        values = build_values(self.template, self.env)
-        self.assertEqual(values['ENABLE_DIARIZATION'], 'false')
-        self.assertEqual(values['MAX_SPEAKERS'], '12')
-        self.assertEqual(values['BQ_PROMOTOR_SOURCE_TABLE'], 'project.dataset.custom_catalog')
-
-    def test_worker_and_workflow_share_manifest_root(self):
+        self.assertEqual(values['MODEL_DEVICE'], 'cuda')
+        self.assertEqual(values['WHISPER_COMPUTE_TYPE'], 'float16')
+        self.assertEqual(values['BQ_LOCATION'], 'US')
+        for key in ('BQ_RESULTS_TABLE', 'BQ_ATTEMPTS_TABLE'):
+            self.assertTrue(values[key].endswith('_gpu'))
+        self.assertIn('prospeccion_gpu', values['OUTPUT_GCS_ROOT'])
         script = (ROOT/'scripts/cloudbuild_deploy.sh').read_text()
-        self.assertIn('MANIFEST_GCS_ROOT=${manifest_root}', script)
-        self.assertIn('if [[ "${_ENABLE_DIARIZATION}" == false ]]', script)
-        self.assertIn('"${secret_args[@]}"', script)
+        self.assertIn('--no-gpu-zonal-redundancy', script)
+        self.assertIn('--labels=proyecto=prospeccion', script)
+        self.assertNotIn('LIKE ', (ROOT/'sql/01_create_transcripciones.sql').read_text())
+        self.assertIn('worker/Dockerfile', self.build)
 
-    def test_invalid_configuration_fails_before_deploy(self):
-        for overrides in ({'_ENABLE_DIARIZATION': 'yes'}, {'_CPU': '2'}):
-            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
-                build_values(self.template, {**self.env, **overrides})
-        for old, new in (('BQ_LOCATION: "US"', 'BQ_LOCATION: "EU"'),
-                         ('MAX_SPEAKERS: "6"', 'MAX_SPEAKERS: "0"')):
-            with self.subTest(new=new), self.assertRaises(ValueError):
-                build_values(self.template.replace(old, new), self.env)
+    def test_rejects_cpu_region_names_or_excess_parallelism(self):
+        for change in ({'_LOCATION': 'us-central1'}, {'_JOB_NAME': 'cpu'},
+                       {'_WORKFLOW_NAME': 'cpu'}, {'_PARALLELISM': '11'}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                build_values(self.template, {**self.env, **change})
 
-    def test_table_is_sorted_and_defaults_match_template(self):
-        self.assertEqual(list(self.env), sorted(self.env))
-        original = {k: json.loads(v.strip()) for k, v in
-                    (line.split(':', 1) for line in self.template.splitlines() if line.strip())}
-        for key in RUNTIME_KEYS: self.assertEqual(original[key], self.env['_' + key])
+    @patch.dict(os.environ, {'MODEL_DEVICE': 'cuda', 'WHISPER_COMPUTE_TYPE': 'float16'})
+    def test_gpu_preflight_rejects_missing_cuda(self):
+        torch = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+        ct2 = SimpleNamespace(get_supported_compute_types=lambda device: {'float16'})
+        with self.assertRaises(RuntimeError):
+            check_gpu(torch, ct2)
