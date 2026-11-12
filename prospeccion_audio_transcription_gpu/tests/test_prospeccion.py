@@ -182,7 +182,8 @@ class SinkTests(unittest.TestCase):
         ddl = (Path(__file__).resolve().parents[1]/'sql/01_create_transcripciones.sql').read_text()
         for name, _, _ in params: self.assertIn(name + ' ', ddl)
         self.assertEqual(dict((n, v) for n, _, v in params)['folder_uuid'], '2437')
-        self.assertIn('PARSE_JSON(@serialized_level_2)', sql)
+        self.assertIn("PARSE_JSON(@serialized_level_2, wide_number_mode=>'round')", sql)
+        self.assertIn('PARSE_JSON(@catalog_metadata)', sql)
 
     def test_attempt_merge_keys_on_attempt_not_recording(self):
         client = MagicMock()

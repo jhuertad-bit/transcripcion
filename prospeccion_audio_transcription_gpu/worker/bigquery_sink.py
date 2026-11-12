@@ -10,7 +10,14 @@ def merge(client, table, location, values, keys, types=None, json_fields=()):
         raise ValueError("BQ_LOCATION requerido")
     types = types or {}
     fields = list(values)
-    select = ', '.join((f'PARSE_JSON(@{f})' if f in json_fields else f'@{f}') + f' AS {f}' for f in fields)
+    # Los resultados de modelos contienen floats que BigQuery puede rechazar en
+    # modo exact. Conservar el JSON original en GCS y permitir FLOAT64 en BQ.
+    # El catálogo mantiene modo exact para no redondear identificadores.
+    def expression(field):
+        if field == 'serialized_level_2' and field in json_fields:
+            return f"PARSE_JSON(@{field}, wide_number_mode=>'round')"
+        return f'PARSE_JSON(@{field})' if field in json_fields else f'@{field}'
+    select = ', '.join(expression(f) + f' AS {f}' for f in fields)
     sql = (f'MERGE `{table}` T USING (SELECT {select}) S ON ' +
            ' AND '.join(f'T.{k}=S.{k}' for k in keys) +
            ' WHEN MATCHED THEN UPDATE SET ' + ', '.join(f'{f}=S.{f}' for f in fields if f not in keys) +
