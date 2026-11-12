@@ -53,14 +53,16 @@ def main():
     parser.add_argument('--desde', required=True, type=date.fromisoformat)
     parser.add_argument('--hasta', required=True, type=date.fromisoformat)
     parser.add_argument('--origen', required=True, choices=['mentor', 'promotor', 'ambos'])
-    parser.add_argument('--lote', type=int, default=5)
+    parser.add_argument('--lote', type=int, default=20)
     parser.add_argument('--max-lotes-por-fecha', type=int, default=100)
     args = parser.parse_args()
     if args.desde > args.hasta or not 1 <= args.lote <= 100 or args.max_lotes_por_fecha < 1:
         parser.error('Revisar rango, lote (1..100) y máximo de lotes positivo.')
     job = json.loads(run('run', 'jobs', 'describe', JOB, f'--project={PROJECT}',
                          f'--region={REGION}', '--format=json', capture=True))
-    root = configuration(job)
+    root = configuration(job, max_parallelism=10)
+    parallelism = int(job['spec']['template']['spec'].get('parallelism', 1))
+    print(f'Paralelismo del Job: {parallelism}; audios por lote: {args.lote}.', flush=True)
     del job
     origins = ['mentor', 'promotor'] if args.origen == 'ambos' else [args.origen]
     day = args.desde

@@ -16,7 +16,7 @@ def command(*args, capture=False):
     return result.stdout if capture else None
 
 
-def configuration(job):
+def configuration(job, max_parallelism=1):
     template = job['spec']['template']['spec']['template']['spec']
     container = template['containers'][0]
     env = {entry['name']: entry for entry in container.get('env', [])}
@@ -28,8 +28,8 @@ def configuration(job):
         raise ValueError('El piloto requiere una GPU por tarea.')
     if template.get('nodeSelector', {}).get('run.googleapis.com/accelerator') != 'nvidia-l4':
         raise ValueError('El piloto requiere NVIDIA L4.')
-    if int(job['spec']['template']['spec'].get('parallelism', 1)) != 1:
-        raise ValueError('El piloto requiere paralelismo 1.')
+    if not 1 <= int(job['spec']['template']['spec'].get('parallelism', 1)) <= max_parallelism:
+        raise ValueError(f'El proceso requiere paralelismo entre 1 y {max_parallelism}.')
     if value('ENABLE_DIARIZATION').lower() == 'true':
         token = env.get('HF_TOKEN', {})
         if not (token.get('value') or token.get('valueFrom', {}).get('secretKeyRef')):
