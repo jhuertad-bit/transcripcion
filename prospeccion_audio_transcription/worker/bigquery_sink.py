@@ -10,7 +10,14 @@ def merge(client, table, location, values, keys, types=None, json_fields=()):
         raise ValueError("BQ_LOCATION requerido")
     types = types or {}
     fields = list(values)
-    select = ', '.join((f'PARSE_JSON(@{f})' if f in json_fields else f'@{f}') + f' AS {f}' for f in fields)
+    # Permitir el redondeo de decimales del modelo al convertir el resultado
+    # a JSON de BigQuery. El JSON original en GCS conserva sus valores.
+    # Los metadatos del catálogo siguen en modo exact para preservar IDs.
+    def expression(field):
+        if field == 'serialized_level_2' and field in json_fields:
+            return f"PARSE_JSON(@{field}, wide_number_mode=>'round')"
+        return f'PARSE_JSON(@{field})' if field in json_fields else f'@{field}'
+    select = ', '.join(expression(f) + f' AS {f}' for f in fields)
     sql = (f'MERGE `{table}` T USING (SELECT {select}) S ON ' +
            ' AND '.join(f'T.{k}=S.{k}' for k in keys) +
            ' WHEN MATCHED THEN UPDATE SET ' + ', '.join(f'{f}=S.{f}' for f in fields if f not in keys) +
