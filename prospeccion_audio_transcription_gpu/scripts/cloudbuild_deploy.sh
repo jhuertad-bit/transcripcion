@@ -27,8 +27,8 @@ case "${1:-}" in
   deploy) ;;
   *) exit 1 ;;
 esac
-# Verificar la imagen antes de modificar tablas o recursos.
-gcloud artifacts docker images describe "${IMAGE_URI}" --project="${_PROJECT_ID}" --format='none'
+# Cloud Run valida el acceso a la imagen al desplegar. Evitar images describe:
+# también consulta Container Analysis y requiere permisos ajenos al despliegue.
 env_file="$(mktemp)"
 trap 'rm -f "$env_file"' EXIT
 "$python_bin" "${_SOURCE_DIR}/scripts/render_job_env.py" "$env_file"
