@@ -28,7 +28,7 @@ class GPUDeploymentTests(unittest.TestCase):
         self.assertIn('prospeccion_gpu', values['OUTPUT_GCS_ROOT'])
         script = (ROOT/'scripts/cloudbuild_deploy.sh').read_text()
         self.assertIn('--no-gpu-zonal-redundancy', script)
-        self.assertIn('--update-labels=proyecto=prospeccion', script)
+        self.assertIn('--labels=proyecto=prospeccion', script)
         self.assertNotIn('LIKE ', (ROOT/'sql/01_create_transcripciones.sql').read_text())
         self.assertIn('worker/Dockerfile', self.build)
 
