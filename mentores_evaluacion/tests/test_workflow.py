@@ -22,14 +22,12 @@ class DailyWorkflowTests(unittest.TestCase):
         self.assertNotIn("try", action)
         self.assertNotIn("retry", action)
         self.assertEqual(action["call"], "process_day")
-        self.assertEqual(action["args"]["daily"], "${daily}")
+        self.assertNotIn("daily", action["args"])
 
-    def test_daily_has_exactly_two_sequential_non_forced_retries(self):
+    def test_every_day_has_exactly_two_sequential_non_forced_retries(self):
         steps = {k: v for step in self.workflow["process_day"]["steps"] for k, v in step.items()}
         self.assertEqual(steps["principal"]["call"], "run_job")
-        self.assertEqual(steps["daily_retries"]["switch"],
-                         [{"condition": "${daily}", "next": "retries"}])
-        self.assertEqual(steps["daily_retries"]["next"], "done")
+        self.assertEqual(list(steps), ["principal", "retries", "done"])
         loop = steps["retries"]["for"]
         self.assertEqual(loop["range"], [1, 2])
         self.assertNotIn("parallel", steps["retries"])
@@ -39,8 +37,6 @@ class DailyWorkflowTests(unittest.TestCase):
         for key in ("job", "date_from", "date_to", "catalog_load_id"):
             self.assertEqual(retry["args"][key], steps["principal"]["args"][key])
         self.assertIn('"_retry_" + string(attempt)', retry["args"]["run_id"])
-        init = self.steps["init"]["assign"]
-        self.assertIn({"daily": '${date_from == "" and date_to == ""}'}, init)
 
     def test_retries_reuse_completed_results_and_limit_inference_to_pending_errors(self):
         sql = (ROOT / "sql" / "02_sp_process.sql").read_text(encoding="utf-8")
