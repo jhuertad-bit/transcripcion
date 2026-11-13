@@ -1,4 +1,4 @@
-"""Despliega Counter GPU independiente usando la configuración real del piloto CPU."""
+"""Despliega Job Counter GPU para el 07/11 con las mismas tablas del piloto CPU."""
 import argparse
 import json
 from pathlib import Path
@@ -40,8 +40,11 @@ def gpu_values(source):
         if table:
             if not re.fullmatch(r'prd-utpbi-data-operation\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*', table) or table.endswith('_gpu'):
                 raise ValueError('Revisar tabla CPU antes de generar el destino GPU.')
-            values[key] = table + '_gpu'
-            tables.append((table, values[key]))
+            # El piloto del 07/11 continúa en sus tablas actuales.
+    expected_results = f'{PROJECT}.raw_queue_smart.counter_piloto_202611_resultados'
+    expected_source = f'{PROJECT}.raw_queue_smart.counter_piloto_202611_entrada'
+    if values.get('BQ_RESULTS_TABLE') != expected_results or values.get('BQ_SOURCE_TABLE') != expected_source:
+        raise ValueError('El origen debe apuntar a las tablas de entrada y resultados del piloto Counter.')
     if not values.get('BQ_RESULTS_TABLE') or not values.get('BQ_LOCATION'):
         raise ValueError('El piloto debe tener tabla de resultados y ubicación BigQuery.')
     for key in ('OUTPUT_GCS_ROOT', 'MANIFEST_GCS_ROOT'):
@@ -54,7 +57,8 @@ def gpu_values(source):
     values.update(MODEL_DEVICE='cuda', WHISPER_COMPUTE_TYPE='float16',
                   PIPELINE_VERSION='counter-gpu-v1.0.0', FILES_PER_WORKER='1',
                   BATCH_MAX_FILES='1', JOB_ROLE='prepare', INCLUDE_COMPLETED='false', FORCE='false',
-                  PROCESS_DAY_FROM='', PROCESS_DAY_TO='',
+                  PROCESS_DAY_FROM='2026-11-07', PROCESS_DAY_TO='2026-11-07',
+                  NOISE_REDUCTION='false',
                   WHISPER_CPU_THREADS='4', DIARIZATION_CPU_THREADS='4')
     return values, tables, task.get('serviceAccountName')
 
@@ -71,21 +75,7 @@ def main():
     del source
     if not account or not account.endswith('.iam.gserviceaccount.com'):
         raise ValueError('Revisar cuenta de ejecución del Job CPU.')
-    for old, new in tables:
-        # LIKE crea el esquema vacío; no copia audios ni resultados CPU.
-        query = f'CREATE TABLE IF NOT EXISTS `{new}` LIKE `{old}`'
-        token = gcloud('auth', 'print-access-token', capture=True).strip()
-        import urllib.request
-        body = json.dumps({'query': query, 'useLegacySql': False,
-                           'location': values['BQ_LOCATION'], 'timeoutMs': 200000}).encode()
-        request = urllib.request.Request(
-            f'https://bigquery.googleapis.com/bigquery/v2/projects/{PROJECT}/queries',
-            data=body, headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
-        with urllib.request.urlopen(request) as response:
-            result = json.load(response)
-        if not result.get('jobComplete') or result.get('errors'):
-            raise ValueError('DDL BigQuery no confirmado; revisar tablas antes de continuar.')
-        print('Tabla GPU preparada:', new, flush=True)
+    print('Resultados en la tabla existente:', values['BQ_RESULTS_TABLE'], flush=True)
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / 'gpu-env.json'
         path.write_text(json.dumps(values), encoding='utf-8')
@@ -98,6 +88,8 @@ def main():
                '--parallelism=1', '--max-retries=0',
                '--labels=proyecto=counter,entorno=piloto,acelerador=l4', '--quiet')
     print('Counter GPU desplegado sin ejecutar audios ni Workflows.')
+    print('Configurado para 2026-11-07, sin filtro de ruido. No ejecutar prepare/worker todavía:')
+    print('primero verificar que CPU no esté activo y seleccionar pendientes por audio_uri en BigQuery.')
     print('Agregar HF_TOKEN al Job GPU antes de ejecutar diarización. No se copió el token CPU.')
 
 
