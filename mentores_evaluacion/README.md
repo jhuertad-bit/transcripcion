@@ -1,8 +1,8 @@
 # Pipeline productivo de evaluacion de mentores
 
 Paquete independiente para Cloud Build, siguiendo el patron de Counter/transcripciones.
-El build crea la imagen y despliega Cloud Run Job y Workflows. Scheduler esta deshabilitado
-por defecto (`_ENABLE_SCHEDULER=false`). La ejecucion manual carga metadatos TRUE/Firestore y consume audios existentes. No copia, descarga
+El build crea la imagen y despliega Cloud Run Job y Workflows. Scheduler esta habilitado
+por defecto (`_ENABLE_SCHEDULER=true`). La ejecucion manual carga metadatos TRUE/Firestore y consume audios existentes. No copia, descarga
 ni transcribe archivos de audio.
 
 ## Configuracion reutilizada y verificada
@@ -20,7 +20,7 @@ ni transcribe archivos de audio.
 | Procedimiento almacenado | `raw_cita_promotor.sp_process_speech_analytics_mentores` |
 | Firestore | Proyecto `citapromotor-utp`, base `(default)` |
 | Secreto de acceso a fuente | `PromotoresSourceSa:latest`, existente en el proyecto |
-| Scheduler | Deshabilitado: `_ENABLE_SCHEDULER=false` |
+| Scheduler | Habilitado: `_ENABLE_SCHEDULER=true` |
 | Horario reservado si se habilita | `0 7 * * *`, `America/Lima` |
 
 La consulta de Scheduler no encontro una programacion de Counter para copiar. Las 07:00 son
@@ -54,7 +54,7 @@ El build primero ejecuta pruebas y construye/publica la imagen. Luego despliega 
 ejecuta `init` (sin inferencia), crea/actualiza el SP y despliega el Workflow. Solo crea/actualiza Scheduler si
 `_ENABLE_SCHEDULER=true`; si es false y el Scheduler propio ya existe, lo pausa.
 Un despliegue nuevo conserva tablas existentes. No modifica recursos de transcripciones.
-Con la configuracion por defecto no quedan ejecuciones programadas. El build no dispara evaluaciones de audios.
+Con la configuracion por defecto queda una ejecucion diaria a las 07:00 de America/Lima. El build no dispara evaluaciones de audios.
 
 Se requieren APIs habilitadas de Build, Artifact Registry, Cloud Run, Workflows, Scheduler,
 BigQuery, Secret Manager y Firestore. No se conceden permisos IAM automaticamente:
@@ -296,3 +296,9 @@ el SP desplegado y no sustituyen la comprobacion posterior con un audio.
 Referencias de implementacion: [variables Cloud Build](https://docs.cloud.google.com/build/docs/configuring-builds/substitute-variable-values),
 [overrides de Cloud Run](https://docs.cloud.google.com/run/docs/execute/jobs),
 [Workflows con Cloud Run Jobs](https://docs.cloud.google.com/workflows/docs/tutorials/execute-cloud-run-jobs).
+
+## Activacion diaria — 13 de noviembre de 2026
+
+Scheduler creado y verificado en estado ENABLED, invocando el Workflow existente.
+Horario: todos los dias a las 07:00 de America/Lima. Primera ejecucion programada: 14 de noviembre de 2026.
+La activacion no inicio una ejecucion manual. Si el activador de Build define _ENABLE_SCHEDULER como sustitucion, mantenerlo en true.

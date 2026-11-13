@@ -8,7 +8,7 @@ substitutions:
   _JOB_NAME: 'prd-utpbi-mentores-evaluacion'
   _WORKFLOW_NAME: 'prd-utpbi-mentores-evaluacion-pipeline'
   _SCHEDULER_NAME: 'prd-sch-mentores-evaluacion'
-  _ENABLE_SCHEDULER: 'false'
+  _ENABLE_SCHEDULER: 'true'
   _SCHEDULE: '0 7 * * *'
   _TIME_ZONE: 'America/Lima'
   _BQ_LOCATION: 'US'
