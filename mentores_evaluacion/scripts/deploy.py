@@ -58,7 +58,8 @@ def main():
              "--time-zone=" + e["TIME_ZONE"], "--uri=" + uri, "--http-method=POST",
              "--oauth-service-account-email=" + e["WORKFLOW_SERVICE_ACCOUNT"],
              "--oauth-token-scope=https://www.googleapis.com/auth/cloud-platform",
-             "--headers=Content-Type=application/json", "--message-body-from-file=" + str(body),
+             ("--update-headers=" if exists else "--headers=") + "Content-Type=application/json",
+             "--message-body-from-file=" + str(body),
              "--max-retry-attempts=0", "--quiet")
     if exists:
         call("scheduler", "jobs", "resume", e["SCHEDULER_NAME"],

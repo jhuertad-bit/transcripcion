@@ -32,3 +32,25 @@ class ManualDeployTests(unittest.TestCase):
 
     def test_default_pauses_existing_scheduler(self):
         self.check_manual(True)
+
+    def test_enabled_scheduler_header_flags(self):
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                env = dict(PROJECT="prd-utpbi-data-operation", LOCATION="us-central1",
+                           REPOSITORY="repo", SERVICE_ACCOUNT="job@example.com",
+                           WORKFLOW_SERVICE_ACCOUNT="workflow@example.com", SCHEDULE="0 7 * * *",
+                           TIME_ZONE="America/Lima", ENABLE_SCHEDULER="true",
+                           JOB_NAME="prd-utpbi-mentores-evaluacion",
+                           WORKFLOW_NAME="prd-utpbi-mentores-evaluacion-pipeline",
+                           SCHEDULER_NAME="prd-sch-mentores-evaluacion", SOURCE_DIR=".",
+                           IMAGE_URI="image:test", BQ_LOCATION="US", FIRESTORE_SECRET="source")
+                listing = '[{"name":"projects/p/locations/l/jobs/prd-sch-mentores-evaluacion"}]' if existing else '[]'
+                with patch.dict(os.environ, env, clear=True), patch.object(deploy, "call", return_value=listing) as call:
+                    deploy.main()
+                operation = "update" if existing else "create"
+                command = next(c.args for c in call.call_args_list
+                               if c.args[:4] == ("scheduler", "jobs", operation, "http"))
+                expected = "--update-headers=" if existing else "--headers="
+                invalid = "--headers=" if existing else "--update-headers="
+                self.assertIn(expected + "Content-Type=application/json", command)
+                self.assertFalse(any(arg.startswith(invalid) for arg in command))
