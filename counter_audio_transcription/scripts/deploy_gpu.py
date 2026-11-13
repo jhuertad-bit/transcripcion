@@ -79,7 +79,8 @@ def main():
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / 'gpu-env.json'
         path.write_text(json.dumps(values), encoding='utf-8')
-        gcloud('run', 'jobs', 'deploy', TARGET, '--region=europe-west4',
+        # Timeout GPU de 7200s requiere la etapa Beta (long-running GPU jobs).
+        gcloud('beta', 'run', 'jobs', 'deploy', TARGET, '--region=europe-west4',
                f'--image=us-central1-docker.pkg.dev/{PROJECT}/serializa-audio-repo/counter-audio-transcription-gpu:{args.build_id}',
                f'--service-account={account}', '--command=python', '--args=-m,worker.gpu_main',
                f'--env-vars-file={path}', '--remove-secrets=HF_TOKEN',
