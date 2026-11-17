@@ -19,17 +19,17 @@ spec.loader.exec_module(renderer)
 
 
 def settings():
-    return {"project_id": "example-cpv", "new_project_confirmed": True,
+    return {"project_id": "example-cpv", "isolated_resources_confirmed": True,
             "region": "us-central1", "canary_revision": "a" * 40,
             "nemotron_revision": "b" * 40, "gemini_endpoint": "gemini-example",
             "process_day_from": "2026-11-02", "process_day_to": "2026-11-02",
-            "new_github_repository": "example/counter-presencial-independent", "github_branch": "main"}
+            "github_repository": "example/counter-presencial-independent", "github_branch": "main"}
 
 
 class IsolationTests(unittest.TestCase):
-    def test_legacy_project_and_unconfirmed_project_fail_before_rendering(self):
-        for changes in ({"project_id": "prd-utpbi-data-operation"}, {"new_project_confirmed": False},
-                        {"new_github_repository": "nsilvera-zat/counter-audio-transcription"}):
+    def test_invalid_project_and_unconfirmed_namespace_fail_before_rendering(self):
+        for changes in ({"project_id": "invalid project"}, {"isolated_resources_confirmed": False},
+                        {"source_directory": "../counter_audio_transcription"}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 renderer.render({**settings(), **changes})
 
@@ -53,6 +53,57 @@ class IsolationTests(unittest.TestCase):
         with patch.dict(os.environ, without_model, clear=True), self.assertRaises(ValueError):
             Config.from_env()
 
+    def test_prd_build_and_runtime_allow_only_our_resource_namespace(self):
+        cfg = {**settings(), "project_id": "prd-utpbi-data-operation",
+               "github_repository": "jhuertad-bit/transcripcion",
+               "source_directory": "counter_presencial_vnext"}
+        files = renderer.render(cfg)
+        env = json.loads(files["runtime.env.yaml"])
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(Config.from_env().project, cfg["project_id"])
+        self.assertIn("_SOURCE_DIR=counter_presencial_vnext", files["create_trigger.sh"])
+        self.assertIn("--build-config=counter_presencial_vnext/cloudbuild.yaml", files["create_trigger.sh"])
+        self.assertIn("counter_presencial_vnext/**", files["create_trigger.sh"])
+        for key, old_value in {
+            "BQ_SOURCE_TABLE": "prd-utpbi-data-operation.raw_queue_smart.queuesmart_mp3_catalog",
+            "PRESENCIAL_ROLE_MODEL": "prd-utpbi-data-operation.adf_speech_analytics.gemini-3-5-flash",
+            "ALLOWED_INPUT_BUCKETS": "prd-utp-stg-queuesmart",
+            "PRESENCIAL_OUTPUT_GCS_ROOT": "gs://prd-utp-stg-queuesmart/counter/presencial-vnext",
+        }.items():
+            with self.subTest(key=key), patch.dict(os.environ, {**env, key: old_value}, clear=True):
+                with self.assertRaises(ValueError):
+                    Config.from_env()
+        # BigQuery data permissions must never be granted at the PRD project level.
+        self.assertNotIn("--role=roles/bigquery.dataEditor", files["bootstrap.sh"])
+        self.assertNotIn("--role=roles/bigquery.dataViewer", files["bootstrap.sh"])
+        self.assertNotIn("--role=roles/bigquery.connectionUser", files["bootstrap.sh"])
+        self.assertNotIn("--role=roles/run.viewer", files["bootstrap.sh"])
+        self.assertIn("ON SCHEMA `prd-utpbi-data-operation.counter_presencial_vnext`", files["dataset_access.sql"])
+
+    def test_connection_grant_preserves_policy_and_uses_only_our_connection(self):
+        import io
+        spec = importlib.util.spec_from_file_location("grant_connection", ROOT / "scripts/grant_connection.py")
+        grant_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(grant_module)
+        previous = {"etag": "original-etag", "version": 3, "bindings": [
+            {"role": "roles/bigquery.connectionAdmin", "members": ["user:operator@example.com"]},
+            {"role": "roles/bigquery.connectionUser", "members": ["user:existing@example.com"]}]}
+        calls = []
+
+        def opener(request, timeout):
+            calls.append((request.full_url, json.loads(request.data)))
+            return io.BytesIO(json.dumps(previous if len(calls) == 1 else {}).encode())
+
+        grant_module.grant("prd-utpbi-data-operation", token="test-token", opener=opener)
+        self.assertEqual(len(calls), 2)
+        expected = "projects/prd-utpbi-data-operation/locations/us/connections/counter-presencial-vnext-gemini:"
+        self.assertTrue(all(expected in url for url, _ in calls))
+        policy = calls[1][1]["policy"]
+        self.assertEqual(policy["etag"], "original-etag")
+        self.assertEqual(policy["bindings"][0], previous["bindings"][0])
+        self.assertEqual(policy["bindings"][1]["members"], ["user:existing@example.com",
+            "serviceAccount:cpv-roles@prd-utpbi-data-operation.iam.gserviceaccount.com"])
+
     def test_rendered_commands_are_new_scoped_and_parse_as_shell(self):
         files = renderer.render(settings())
         for name, contents in files.items():
@@ -71,7 +122,7 @@ class IsolationTests(unittest.TestCase):
 
     def test_renderer_rejects_command_and_sql_injection(self):
         for key, value in {"project_id": "a; false", "gemini_endpoint": "gemini-x'); DROP TABLE x;--",
-                           "new_github_repository": "owner/$(false)", "github_branch": "main;false",
+                           "github_repository": "owner/$(false)", "github_branch": "main;false",
                            "canary_revision": "main"}.items():
             with self.subTest(key=key), self.assertRaises(ValueError):
                 renderer.render({**settings(), key: value})

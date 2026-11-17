@@ -48,7 +48,7 @@ def prepare(config, store, client, bq):
     source = table_id(os.environ["BQ_SOURCE_TABLE"])
     from counter_presencial.isolation import Resources
     if source != Resources(config.project).table("catalog_vnext"):
-        raise ValueError("Catalog must be in the dedicated project/dataset")
+        raise ValueError("Catalog must be in the selected project and dedicated dataset")
     sql = f"""SELECT * FROM `{source}`
       WHERE gcs_uri IS NOT NULL AND process_day BETWEEN @start AND @end
       QUALIFY ROW_NUMBER() OVER(PARTITION BY gcs_uri ORDER BY load_date DESC, fecha_procesamiento DESC)=1
@@ -212,7 +212,7 @@ def publish_bigquery(bq, config, result):
     target = table_id(target)
     from counter_presencial.isolation import Resources
     if target != Resources(config.project).table("counter_presencial_resultados_vnext"):
-        raise ValueError("Results must be in the dedicated project/dataset")
+        raise ValueError("Results must be in the selected project and dedicated dataset")
     from google.cloud import bigquery
     sql = f"""MERGE `{target}` T USING
       (SELECT @key AS role_key, @conversation AS conversation_id, @audio AS acoustic_key,

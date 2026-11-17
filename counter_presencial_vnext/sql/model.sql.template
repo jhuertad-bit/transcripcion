@@ -1,4 +1,4 @@
--- Dedicated remote model and connection, all in the new project.
+-- Dedicated remote model and connection, all in the selected project, within our resource namespace.
 -- The endpoint is a managed Gemini API, not Paul's BigQuery model object.
 CREATE MODEL `${PROJECT_ID}.counter_presencial_vnext.gemini_roles_vnext`
 REMOTE WITH CONNECTION `${PROJECT_ID}.us.counter-presencial-vnext-gemini`

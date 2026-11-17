@@ -19,8 +19,8 @@ def command(*args):
 
 def render(settings):
     r = Resources(settings["project_id"])
-    if settings.get("new_project_confirmed") is not True:
-        raise ValueError("Confirm in configuration that this is a new, dedicated project")
+    if settings.get("isolated_resources_confirmed") is not True:
+        raise ValueError("Confirm that the counter-presencial-vnext resources are dedicated to this pipeline")
     # Fixed initial profile; changing regions requires revisiting GPU availability/data location.
     region = settings.get("region")
     if region != "us-central1":
@@ -30,20 +30,24 @@ def render(settings):
             raise ValueError(key + " must be an immutable 40-character checkpoint commit")
     endpoint = settings.get("gemini_endpoint", "")
     if not re.fullmatch(r"gemini-[a-z0-9.-]{1,80}", endpoint):
-        raise ValueError("Specify a supported Gemini endpoint in the new project")
+        raise ValueError("Specify a supported Gemini endpoint in the selected project")
     first, last = (settings[k] for k in ("process_day_from", "process_day_to"))
     if date.fromisoformat(first) > date.fromisoformat(last):
         raise ValueError("Inverted process dates")
-    repository = settings.get("new_github_repository", "")
+    repository = settings.get("github_repository", "")
     if (not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository)
-            or "REPLACE" in repository or repository == "nsilvera-zat/counter-audio-transcription"):
-        raise ValueError("Use a new standalone GitHub repository; the combined mirror is forbidden")
+            or "REPLACE" in repository):
+        raise ValueError("Specify the repository hosting the independent pipeline")
+    source_dir = settings.get("source_directory", ".")
+    if source_dir not in (".", "counter_presencial_vnext"):
+        raise ValueError("source_directory must be . or counter_presencial_vnext")
     branch = settings.get("github_branch", "main")
     if not re.fullmatch(r"[A-Za-z0-9_./-]{1,128}", branch):
         raise ValueError("Invalid GitHub branch")
     p = r.project
     files = {"inventory.json": json.dumps({**r.inventory(), "github_repository": repository,
-                                         "region": region}, indent=2) + "\n"}
+                                         "source_directory": source_dir, "region": region,
+                                         "quota_scope": "shared with other resources in project/region"}, indent=2) + "\n"}
     env = {
         "GCP_PROJECT": p, "GOOGLE_CLOUD_PROJECT": p,
         "ALLOWED_INPUT_BUCKETS": r.bucket("input"),
@@ -74,7 +78,7 @@ def render(settings):
                   "--member=serviceAccount:" + account, "--role=" + role)
 
     header = '#!/usr/bin/env bash\nset -euo pipefail\ncd -- "$(dirname -- "$0")/.."\n'
-    base = [header, "# Execute only after Paul has reviewed these files and created/billed the NEW project.",
+    base = [header, "# Review before executing. Create only our named resources in the selected project.",
             gc("services", "enable", "run.googleapis.com", "cloudbuild.googleapis.com",
                "artifactregistry.googleapis.com", "storage.googleapis.com", "bigquery.googleapis.com",
                "bigqueryconnection.googleapis.com", "aiplatform.googleapis.com", "workflows.googleapis.com",
@@ -90,11 +94,15 @@ def render(settings):
     base.append(command("bq", "--project_id=" + p, "--location=US", "mk", "--dataset", p + ":" + DATASET))
     base.append(command("bq", "--project_id=" + p, "--location=US", "mk", "--connection",
                         "--connection_type=CLOUD_RESOURCE", p + ".us." + PREFIX + "-gemini"))
-    for stage, role in (("prepare", "roles/bigquery.jobUser"), ("prepare", "roles/bigquery.dataViewer"),
-                        ("roles", "roles/bigquery.jobUser"), ("roles", "roles/bigquery.dataEditor"),
-                        ("roles", "roles/bigquery.connectionUser"), ("build", "roles/logging.logWriter"),
-                        ("operator", "roles/run.viewer"), ("workflow", "roles/run.viewer")):
+    for stage, role in (("prepare", "roles/bigquery.jobUser"),
+                        ("roles", "roles/bigquery.jobUser"), ("build", "roles/logging.logWriter")):
         base.append(grant(r.account(stage), role))
+    files["dataset_access.sql"] = "\n".join(
+        f'GRANT `{role}` ON SCHEMA `{p}.{DATASET}` TO "serviceAccount:{r.account(stage)}";'
+        for stage, role in (("prepare", "roles/bigquery.dataViewer"), ("roles", "roles/bigquery.dataEditor"))) + "\n"
+    base.append(command("bq", "--project_id=" + p, "--location=US", "query", "--use_legacy_sql=false")
+                + " < generated/dataset_access.sql")
+    base.append(command("python3", "scripts/grant_connection.py", p))
     for stage in ("prepare", "gpu"):
         base.append(bucket_grant("input", r.account(stage), "roles/storage.objectViewer"))
     for stage in ("prepare", "gpu", "roles"):
@@ -134,22 +142,26 @@ def render(settings):
         job_lines.append(gc("run", "jobs", "create", PREFIX + "-" + stage, *flags)
                          + f' --image="{image_path}@${{CPV_{image.upper()}_DIGEST}}"')
         for principal in ("operator", "workflow"):
-            job_lines.append(gc("run", "jobs", "add-iam-policy-binding", PREFIX + "-" + stage,
-                "--region=" + region, "--member=serviceAccount:" + r.account(principal),
-                "--role=roles/run.jobsExecutorWithOverrides"))
+            for role in ("roles/run.jobsExecutorWithOverrides", "roles/run.viewer"):
+                job_lines.append(gc("run", "jobs", "add-iam-policy-binding", PREFIX + "-" + stage,
+                    "--region=" + region, "--member=serviceAccount:" + r.account(principal), "--role=" + role))
     files["create_jobs.sh"] = "\n".join(job_lines) + "\n"
 
     owner, repo = repository.split("/")
-    files["create_trigger.sh"] = header + "# First connect this NEW GitHub repository in Cloud Build.\n" + gc(
+    files["create_trigger.sh"] = header + "# Use a NEW trigger for this pipeline; never edit Paul's trigger.\n" + gc(
         "builds", "triggers", "create", "github", "--name=" + PREFIX + "-build", "--region=" + region,
         "--repo-owner=" + owner, "--repo-name=" + repo, "--branch-pattern=^" + re.escape(branch) + "$",
-        "--build-config=cloudbuild.yaml", "--service-account=projects/" + p + "/serviceAccounts/" + r.account("build")) + "\n"
+        "--build-config=" + ("cloudbuild.yaml" if source_dir == "." else source_dir + "/cloudbuild.yaml"),
+        "--included-files=" + ("**" if source_dir == "." else source_dir + "/**"),
+        "--substitutions=_SOURCE_DIR=" + source_dir,
+        "--service-account=projects/" + p + "/serviceAccounts/" + r.account("build")) + "\n"
     wf_env = {"PROJECT_ID": p, "LOCATION": region, "GPU_LOCATION": region,
               "PRESENCIAL_OUTPUT_GCS_ROOT": r.output_root}
     files["workflow.env.yaml"] = json.dumps(wf_env, indent=2) + "\n"
     files["optional_workflow.sh"] = header + "# Optional; start with manual Jobs. Refuse to update an existing workflow.\n" + (
-        "CPV_EXISTING=$(" + gc("workflows", "list", "--location=" + region, "--format=value(name)") + ")\n"
-        + 'if [[ -n "$CPV_EXISTING" ]]; then echo "Refusing workflow deployment: this new project already has workflows" >&2; exit 2; fi\n') + gc(
+        "CPV_EXISTING=$(" + gc("workflows", "list", "--location=" + region, "--format=value(name)",
+            "--filter=name:counter-presencial-vnext") + ")\n"
+        + 'if [[ -n "$CPV_EXISTING" ]]; then echo "Refusing to replace an existing counter-presencial-vnext workflow" >&2; exit 2; fi\n') + gc(
         "workflows", "deploy", PREFIX, "--location=" + region,
         "--source=workflows/presencial_vnext.yaml", "--env-vars-file=generated/workflow.env.yaml",
         "--service-account=" + r.account("workflow")) + "\n"

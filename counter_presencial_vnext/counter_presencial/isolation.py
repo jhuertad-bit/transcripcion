@@ -1,4 +1,4 @@
-"""Canonical resource contract for a dedicated GCP project, with no legacy fallback."""
+"""Canonical resource namespace inside the selected GCP project, including PRD."""
 from dataclasses import dataclass
 import os
 import re
@@ -13,9 +13,8 @@ class Resources:
 
     def __post_init__(self):
         if (not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", self.project)
-                or self.project == "prd-utpbi-data-operation"
                 or self.project.startswith(("YOUR", "replace", "REPLACE"))):
-            raise ValueError("A new dedicated GCP project ID is required; legacy project is forbidden")
+            raise ValueError("A valid GCP project ID is required")
 
     def bucket(self, kind):
         if kind not in ("input", "output", "builds"):
