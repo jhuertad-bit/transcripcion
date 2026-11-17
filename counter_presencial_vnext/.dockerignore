@@ -1,0 +1,10 @@
+.git
+__pycache__
+**/__pycache__
+generated
+deployment.local.json
+*.zip
+*.wav
+*.mp3
+*.webm
+*.flac

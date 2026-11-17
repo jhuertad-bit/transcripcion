@@ -1,0 +1,110 @@
+# Separate workflow. Requires three independently configured jobs, never the legacy JOB_NAME.
+main:
+  params: [args]
+  steps:
+    - init:
+        assign:
+          - project: ${sys.get_env("PROJECT_ID")}
+          - region: ${sys.get_env("LOCATION")}
+          - gpu_region: ${sys.get_env("GPU_LOCATION")}
+          - prepare_job: counter-presencial-vnext-prepare
+          - acoustic_job: counter-presencial-vnext-gpu
+          - roles_job: counter-presencial-vnext-roles
+          - root: ${sys.get_env("PRESENCIAL_OUTPUT_GCS_ROOT")}
+          - batch: ${sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+          - acoustic_failed: false
+          - roles_failed: false
+    - mode:
+        switch:
+          - condition: ${map.get(args, "roles_only") == true}
+            next: resume
+        next: prepare
+    - resume:
+        assign:
+          - uri: ${args.manifest_uri}
+        next: roles
+    - prepare:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${"projects/" + project + "/locations/" + region + "/jobs/" + prepare_job}
+          body:
+            overrides:
+              taskCount: 1
+              containerOverrides:
+                - env:
+                    - name: BATCH_ID
+                      value: ${batch}
+          connector_params:
+            timeout: 3600
+    - manifest:
+        assign:
+          - uri: ${root + "/manifests/" + batch + ".json"}
+          - parts: ${text.split(text.substring(uri, 5, len(uri)), "/")}
+          - bucket: ${parts[0]}
+          - object: ${text.substring(uri, 6 + len(bucket), len(uri))}
+    - count:
+        call: http.get
+        args:
+          url: ${"https://storage.googleapis.com/storage/v1/b/" + bucket + "/o/" + text.url_encode(object + ".meta.json") + "?alt=media"}
+          auth:
+            type: OAuth2
+        result: metadata
+    - empty:
+        switch:
+          - condition: ${metadata.body.count == 0}
+            return:
+              status: no_ready_conversations
+              needs_source_review: ${metadata.body.source_review_count}
+              manifest_uri: ${uri}
+    - acoustic:
+        try:
+          call: googleapis.run.v2.projects.locations.jobs.run
+          args:
+            name: ${"projects/" + project + "/locations/" + gpu_region + "/jobs/" + acoustic_job}
+            body:
+              overrides:
+                taskCount: ${metadata.body.task_count}
+                containerOverrides:
+                  - env:
+                      - name: MANIFEST_URI
+                        value: ${uri}
+            connector_params:
+              timeout: 86400
+        except:
+          as: acoustic_error
+          steps:
+            - mark_acoustic_failure:
+                assign:
+                  - acoustic_failed: true
+    - roles:
+        try:
+          call: googleapis.run.v2.projects.locations.jobs.run
+          args:
+            name: ${"projects/" + project + "/locations/" + region + "/jobs/" + roles_job}
+            body:
+              overrides:
+                taskCount: 1
+                containerOverrides:
+                  - env:
+                      - name: MANIFEST_URI
+                        value: ${uri}
+            connector_params:
+              timeout: 86400
+        except:
+          as: roles_error
+          steps:
+            - mark_roles_failure:
+                assign:
+                  - roles_failed: true
+    - partial:
+        switch:
+          - condition: ${acoustic_failed or roles_failed}
+            raise:
+              message: Partial VNext execution; completed conversations are preserved
+              manifest_uri: ${uri}
+              acoustic_failed: ${acoustic_failed}
+              roles_failed: ${roles_failed}
+    - done:
+        return:
+          status: stages_completed_quality_unvalidated
+          manifest_uri: ${uri}

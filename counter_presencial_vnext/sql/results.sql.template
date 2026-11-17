@@ -1,0 +1,30 @@
+-- Review and execute separately; application never creates/replaces existing resources.
+CREATE TABLE `${PROJECT_ID}.counter_presencial_vnext.counter_presencial_resultados_vnext` (
+  role_key STRING NOT NULL,
+  conversation_id STRING,
+  acoustic_key STRING,
+  role_model STRING,
+  prompt_version STRING,
+  review_status STRING,
+  result JSON,
+  updated_at TIMESTAMP
+)
+PARTITION BY DATE(updated_at)
+CLUSTER BY conversation_id, role_key;
+
+-- Deliberately expose all versions, with their keys; consumers must choose an
+-- explicit role_model + prompt_version + acoustic_key for A/B comparisons.
+CREATE VIEW `${PROJECT_ID}.counter_presencial_vnext.counter_presencial_segmentos_vnext` AS
+SELECT r.role_key, r.conversation_id, r.acoustic_key, r.role_model,
+  r.prompt_version, r.review_status,
+  JSON_VALUE(t, '$.turn_id') AS turn_id,
+  SAFE_CAST(JSON_VALUE(t, '$.start') AS FLOAT64) AS inicio,
+  SAFE_CAST(JSON_VALUE(t, '$.end') AS FLOAT64) AS fin,
+  JSON_VALUE(t, '$.speaker_id') AS speaker_id,
+  JSON_VALUE(t, '$.text') AS texto,
+  JSON_VALUE(t, '$.role_initial') AS rol_inicial,
+  JSON_VALUE(t, '$.role_final') AS rol_final,
+  JSON_VALUE(t, '$.role_source') AS origen_rol,
+  SAFE_CAST(JSON_VALUE(t, '$.requires_review') AS BOOL) AS requiere_revision
+FROM `${PROJECT_ID}.counter_presencial_vnext.counter_presencial_resultados_vnext` r
+CROSS JOIN UNNEST(JSON_QUERY_ARRAY(r.result, '$.turns')) t;

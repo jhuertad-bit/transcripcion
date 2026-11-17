@@ -1,0 +1,10 @@
+FROM python:3.11-slim-bookworm
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+WORKDIR /app
+COPY docker/requirements-cpu.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -m spacy download es_core_news_md \
+    && pip check \
+    && pip freeze > /app/resolved-requirements.txt
+COPY counter_presencial/ /app/counter_presencial/
+ENTRYPOINT ["python", "-m", "counter_presencial.main"]

@@ -1,0 +1,9 @@
+# Candidate runtime, not yet validated by a Cloud Build/L4 execution.
+nemo_toolkit[asr]==2.5.0
+transformers==5.21.0
+huggingface-hub>=0.34,<2
+soundfile>=0.13,<1
+google-cloud-storage>=3.0,<4
+google-cloud-bigquery>=3.30,<4
+torch==2.8.0
+torchaudio==2.8.0

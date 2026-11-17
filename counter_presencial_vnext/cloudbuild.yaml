@@ -1,0 +1,23 @@
+# Build only. Run from this independent project root, never the legacy root.
+# Explicit project/SA/staging bucket are supplied by generated build.sh.
+steps:
+  - name: python:3.11-slim-bookworm
+    entrypoint: python
+    args: ['-B', '-c', 'import sys; from counter_presencial.isolation import Resources; Resources(sys.argv[1])', '$PROJECT_ID']
+  - name: python:3.11-slim-bookworm
+    entrypoint: python
+    args: ['-B', '-m', 'unittest', 'discover', '-s', 'tests']
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-f', 'docker/Dockerfile.cpu', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/counter-presencial-vnext/counter-presencial-vnext-cpu:$BUILD_ID', '.']
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-f', 'docker/Dockerfile.gpu', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/counter-presencial-vnext/counter-presencial-vnext-gpu:$BUILD_ID', '.']
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/counter-presencial-vnext/counter-presencial-vnext-cpu:$BUILD_ID'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/counter-presencial-vnext/counter-presencial-vnext-gpu:$BUILD_ID'
+substitutions:
+  _REGION: us-central1
+timeout: 3600s
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 100

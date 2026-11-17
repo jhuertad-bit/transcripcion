@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+generated/
+deployment.local.json
+*.wav
+*.mp3
+*.webm
+*.flac

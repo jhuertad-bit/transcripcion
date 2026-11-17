@@ -1,0 +1,12 @@
+{
+  "project_id": "REPLACE_WITH_NEW_GCP_PROJECT_ID",
+  "region": "us-central1",
+  "new_project_confirmed": false,
+  "canary_revision": "REPLACE_WITH_40_CHARACTER_MODEL_COMMIT",
+  "nemotron_revision": "REPLACE_WITH_40_CHARACTER_MODEL_COMMIT",
+  "gemini_endpoint": "REPLACE_WITH_GEMINI_ENDPOINT_APPROVED_IN_NEW_PROJECT",
+  "process_day_from": "2026-11-02",
+  "process_day_to": "2026-11-02",
+  "new_github_repository": "REPLACE_OWNER/REPLACE_NEW_REPOSITORY",
+  "github_branch": "main"
+}

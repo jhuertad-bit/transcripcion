@@ -1,0 +1,15 @@
+-- Dedicated catalog, populated with copied inputs only. Never a view of Paul's catalog.
+CREATE TABLE `${PROJECT_ID}.counter_presencial_vnext.catalog_vnext` (
+  gcs_uri STRING NOT NULL,
+  original_recording_id STRING,
+  original_gcs_uri STRING,
+  s3_uri STRING,
+  file_name STRING,
+  segment_index INT64,
+  segment_start_seconds FLOAT64,
+  recording_complete BOOL,
+  process_day DATE NOT NULL,
+  load_date TIMESTAMP,
+  fecha_procesamiento TIMESTAMP
+)
+PARTITION BY process_day;
