@@ -2,8 +2,8 @@
 
 Esta entrega conserva el contrato de orquestación de Counter: **un Job nuevo**
 con `JOB_ROLE=prepare → worker → roles`, manifiestos en GCS, BigQuery y
-reanudación de roles. Se ejecuta en `prd-utpbi-data-operation` con recursos
-exclusivos. El código de Paul y sus recursos no se modifican.
+reanudación de roles. En `prd-utpbi-data-operation` usa sus propios recursos de
+ejecución y una subruta para sus imágenes en el repositorio Docker de Counter.
 
 La implementación de audio toma como referencia las tres ramas de SAXO
 Presencial. Ver [SAXO_COMPATIBILITY.md](SAXO_COMPATIBILITY.md) para los commits,
@@ -35,17 +35,18 @@ incluyendo los archivos nuevos, y hacer push al activador propio existente.
 | YAML | `counter_presencial_vnext/cloudbuild.yaml` |
 | `_SOURCE_DIR` | `counter_presencial_vnext` |
 | `_REGION` | `us-central1` |
+| `_REPOSITORY` | `serializa-audio-repo` |
 | Filtro incluido | `counter_presencial_vnext/**` |
 
-El build publica imágenes CPU y GPU en el repositorio propio de Artifact
-Registry `counter-presencial-vnext`. **No crea ni ejecuta Jobs**. El Job único
+El build publica en Artifact Registry bajo `serializa-audio-repo`, en las
+subrutas `counter-presencial-vnext/cpu` y `counter-presencial-vnext/gpu`. El Job único
 usa la imagen GPU, que incluye las dependencias de preparación y roles.
 La imagen CPU permite diagnósticos o ejecución CPU explícita de esas etapas.
 
-Revisar antes del build que el repositorio de imágenes y la cuenta de
-compilación tengan los permisos necesarios. No se modifica el activador de
-otros proyectos. El activador de esta carpeta puede seguir llamándose
-`deploy-counter-presencial-vnext`.
+Para compilar, la cuenta elegida en el activador
+`deploy-counter-presencial-vnext` debe tener permiso de escritura en
+`serializa-audio-repo`. Si se usa `generated/build.sh`, comprobar el mismo
+permiso para la cuenta `cpv-build` que usa ese script.
 
 ## Recursos propios
 
@@ -77,9 +78,10 @@ sí se comparten en PRD: coordinar la prueba con Paul.
    Solo genera archivos locales; no contacta GCP. Si ya existe `generated/`
    de una entrega anterior, conservarlo aparte y generar uno nuevo para evitar
    ejecutar los antiguos scripts de tres Jobs.
-3. Revisar `generated/inventory.json` y `bootstrap.sh`. Este último crea los
-   recursos propios y permisos. Se detiene si un recurso existe; comprobar qué
-   ya está creado y aplicar solamente lo pendiente.
+3. Revisar `generated/inventory.json` y `bootstrap.sh`. En PRD el script
+   comprueba la existencia del repositorio de Counter y crea los recursos
+   propios de ejecución. Si algún recurso propio ya existe, aplicar solamente
+   los pasos pendientes.
 4. Compilar mediante el activador existente o `bash generated/build.sh`.
 5. Exportar `CPV_GPU_DIGEST=sha256:...` del build aprobado y ejecutar
    `bash generated/create_jobs.sh`. Crea solo el Job nuevo; no actualiza un
@@ -127,7 +129,6 @@ procesos, timeouts, silencios, bucles, checkpoints e independencia.
 Cada entorno tiene restricciones de dependencias propias y ejecuta imports
 reales/API checks durante el build. No se usa `--no-deps` para ocultar conflictos.
 
-**Pendiente:** build Docker real en GCP, restauración de pesos e inferencia en
-L4, permisos/cuotas y piloto sobre audios reales. Los tests y los imports no
-demuestran exactitud de roles ni WER/DER. Ver el detalle del flujo en
-[PIPELINE.md](PIPELINE.md).
+**Pendiente:** publicación de las imágenes en `serializa-audio-repo`,
+restauración de pesos e inferencia en L4, permisos/cuotas y piloto sobre
+audios reales. Ver el detalle del flujo en [PIPELINE.md](PIPELINE.md).

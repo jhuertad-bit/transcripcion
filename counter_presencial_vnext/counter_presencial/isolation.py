@@ -5,6 +5,8 @@ import re
 
 PREFIX = "counter-presencial-vnext"
 DATASET = "counter_presencial_vnext"
+COUNTER_PROJECT = "prd-utpbi-data-operation"
+COUNTER_ARTIFACT_REPOSITORY = "serializa-audio-repo"
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,10 @@ class Resources:
     def output_root(self):
         return f"gs://{self.bucket('output')}/presencial-vnext"
 
+    @property
+    def artifact_repository(self):
+        return COUNTER_ARTIFACT_REPOSITORY if self.project == COUNTER_PROJECT else PREFIX
+
     def inventory(self):
         return {
             "project": self.project,
@@ -43,8 +49,8 @@ class Resources:
             "job_roles": ["prepare", "worker", "roles"],
             "workflow": PREFIX,
             "trigger": PREFIX + "-build",
-            "artifact_repository": PREFIX,
-            "images": [PREFIX + "-cpu", PREFIX + "-gpu"],
+            "artifact_repository": self.artifact_repository,
+            "images": [PREFIX + "/cpu", PREFIX + "/gpu"],
             "buckets": {k: self.bucket(k) for k in ("input", "output", "builds")},
             "dataset": f"{self.project}.{DATASET}",
             "catalog": self.table("catalog_vnext"),

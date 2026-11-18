@@ -45,6 +45,7 @@ def render(settings):
     if not re.fullmatch(r"[A-Za-z0-9_./-]{1,128}", branch):
         raise ValueError("Invalid GitHub branch")
     p = r.project
+    artifact_repository = r.artifact_repository
     files = {"inventory.json": json.dumps({**r.inventory(), "github_repository": repository,
                                          "source_directory": source_dir, "region": region,
                                          "quota_scope": "shared with other resources in project/region"}, indent=2) + "\n"}
@@ -84,14 +85,18 @@ def render(settings):
                "artifactregistry.googleapis.com", "storage.googleapis.com", "bigquery.googleapis.com",
                "bigqueryconnection.googleapis.com", "aiplatform.googleapis.com", "workflows.googleapis.com",
                "iam.googleapis.com", "iamcredentials.googleapis.com", "logging.googleapis.com")]
+    if artifact_repository != PREFIX:
+        base.append(gc("artifacts", "repositories", "describe", artifact_repository,
+                       "--location=" + region))
     for account in r.inventory()["service_accounts"].values():
         base.append(gc("iam", "service-accounts", "create", account.split("@")[0],
                        "--display-name=" + PREFIX))
     for kind in ("input", "output", "builds"):
         base.append(gc("storage", "buckets", "create", "gs://" + r.bucket(kind),
                        "--location=" + region, "--uniform-bucket-level-access", "--public-access-prevention"))
-    base.append(gc("artifacts", "repositories", "create", PREFIX, "--location=" + region,
-                   "--repository-format=docker"))
+    if artifact_repository == PREFIX:
+        base.append(gc("artifacts", "repositories", "create", artifact_repository,
+                       "--location=" + region, "--repository-format=docker"))
     base.append(command("bq", "--project_id=" + p, "--location=US", "mk", "--dataset", p + ":" + DATASET))
     base.append(command("bq", "--project_id=" + p, "--location=US", "mk", "--connection",
                         "--connection_type=CLOUD_RESOURCE", p + ".us." + PREFIX + "-gemini"))
@@ -110,8 +115,10 @@ def render(settings):
     for stage in ("workflow", "operator"):
         base.append(bucket_grant("output", r.account(stage), "roles/storage.objectViewer"))
     base.append(bucket_grant("builds", r.account("build"), "roles/storage.objectAdmin"))
-    base.append(gc("artifacts", "repositories", "add-iam-policy-binding", PREFIX, "--location=" + region,
-                   "--member=serviceAccount:" + r.account("build"), "--role=roles/artifactregistry.writer"))
+    if artifact_repository == PREFIX:
+        base.append(gc("artifacts", "repositories", "add-iam-policy-binding", artifact_repository,
+                       "--location=" + region, "--member=serviceAccount:" + r.account("build"),
+                       "--role=roles/artifactregistry.writer"))
     base.append(command("bq", "--project_id=" + p, "--location=US", "show", "--connection",
                         "--format=prettyjson", p + ".us." + PREFIX + "-gemini") + " > generated/connection.json")
     base.append("CPV_CONNECTION_SA=$(python3 -c 'import json; print(json.load(open(\"generated/connection.json\"))[\"cloudResource\"][\"serviceAccountId\"])')")
@@ -124,6 +131,7 @@ def render(settings):
     files["bootstrap.sh"] = "\n".join(base) + "\n"
 
     files["build.sh"] = header + gc("builds", "submit", ".", "--config=cloudbuild.yaml",
+        "--substitutions=_REPOSITORY=" + artifact_repository,
         "--region=" + region, "--service-account=projects/" + p + "/serviceAccounts/" + r.account("build"),
         "--gcs-source-staging-dir=gs://" + r.bucket("builds") + "/source") + "\n"
     job_lines = [header,
@@ -133,7 +141,7 @@ def render(settings):
              "--env-vars-file=generated/runtime.env.yaml", "--tasks=1", "--parallelism=1",
              "--max-retries=0", "--task-timeout=3600s", "--cpu=8", "--memory=32Gi",
              "--gpu=1", "--gpu-type=nvidia-l4", "--no-gpu-zonal-redundancy"]
-    image = f"{region}-docker.pkg.dev/{p}/{PREFIX}/{PREFIX}-gpu"
+    image = f"{region}-docker.pkg.dev/{p}/{artifact_repository}/{PREFIX}/gpu"
     job_lines.append(gc("run", "jobs", "create", PREFIX + "-gpu", *flags)
                      + f' --image="{image}@${{CPV_GPU_DIGEST}}"')
     for principal in ("operator", "workflow"):
@@ -148,7 +156,7 @@ def render(settings):
         "--repo-owner=" + owner, "--repo-name=" + repo, "--branch-pattern=^" + re.escape(branch) + "$",
         "--build-config=" + ("cloudbuild.yaml" if source_dir == "." else source_dir + "/cloudbuild.yaml"),
         "--included-files=" + ("**" if source_dir == "." else source_dir + "/**"),
-        "--substitutions=_SOURCE_DIR=" + source_dir,
+        f"--substitutions=_SOURCE_DIR={source_dir},_REPOSITORY={artifact_repository}",
         "--service-account=projects/" + p + "/serviceAccounts/" + r.account("build")) + "\n"
     wf_env = {"PROJECT_ID": p, "LOCATION": region, "JOB_NAME": PREFIX + "-gpu",
               "MANIFEST_GCS_ROOT": r.output_root + "/manifests", "ROLE_ENABLED": "true"}

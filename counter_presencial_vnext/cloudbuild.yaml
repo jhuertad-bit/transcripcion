@@ -11,16 +11,17 @@ steps:
     args: ['-B', '-m', 'unittest', 'discover', '-s', 'tests']
   - name: gcr.io/cloud-builders/docker
     dir: '${_SOURCE_DIR}'
-    args: ['build', '-f', 'docker/Dockerfile.cpu', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/counter-presencial-vnext/counter-presencial-vnext-cpu:$BUILD_ID', '.']
+    args: ['build', '-f', 'docker/Dockerfile.cpu', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/counter-presencial-vnext/cpu:$BUILD_ID', '.']
   - name: gcr.io/cloud-builders/docker
     dir: '${_SOURCE_DIR}'
-    args: ['build', '-f', 'docker/Dockerfile.gpu', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/counter-presencial-vnext/counter-presencial-vnext-gpu:$BUILD_ID', '.']
+    args: ['build', '-f', 'docker/Dockerfile.gpu', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/counter-presencial-vnext/gpu:$BUILD_ID', '.']
 images:
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/counter-presencial-vnext/counter-presencial-vnext-cpu:$BUILD_ID'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/counter-presencial-vnext/counter-presencial-vnext-gpu:$BUILD_ID'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/counter-presencial-vnext/cpu:$BUILD_ID'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/counter-presencial-vnext/gpu:$BUILD_ID'
 substitutions:
   _SOURCE_DIR: '.'
   _REGION: us-central1
+  _REPOSITORY: serializa-audio-repo
 timeout: 3600s
 options:
   logging: CLOUD_LOGGING_ONLY

@@ -33,12 +33,14 @@ fallos/timeout del proceso Canary y rechazo de más de cuatro hablantes
 significativos. Los tests verifican que los modelos GPU se descargan antes de
 cargar el siguiente.
 
-## Validación pendiente en GCP
+## Validación en GCP
 
-No se ejecutó Docker ni se desplegaron recursos desde esta sesión. Tampoco se
-descargaron los pesos, se ejecutó inferencia en L4 ni se llamó a Gemini.
-Los entornos locales comprueban dependencias e imports; la compilación real
-también debe comprobar las bibliotecas del sistema de cada imagen.
+Cloud Build completó los cuatro pasos del build `8c496026…` del commit
+`e6408d3`, incluida la compilación de las imágenes CPU y GPU. La publicación
+falló al buscar el repositorio anterior. VNext ahora utiliza el repositorio
+existente de Counter, `serializa-audio-repo`, y la subruta
+`counter-presencial-vnext/`. Falta confirmar la publicación con un build
+del commit actualizado, la descarga de pesos, la inferencia en L4 y Gemini.
 
 Paul debe confirmar el build nuevo, cuotas/permisos, revisiones inmutables de
 los pesos y endpoint Gemini; después, ejecutar el piloto de hasta tres

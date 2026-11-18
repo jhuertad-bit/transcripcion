@@ -62,6 +62,12 @@ class IsolationTests(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True):
             self.assertEqual(Config.from_env().project, cfg["project_id"])
         self.assertIn("_SOURCE_DIR=counter_presencial_vnext", files["create_trigger.sh"])
+        self.assertIn("_REPOSITORY=serializa-audio-repo", files["create_trigger.sh"])
+        self.assertIn("--substitutions=_REPOSITORY=serializa-audio-repo", files["build.sh"])
+        self.assertIn("/serializa-audio-repo/counter-presencial-vnext/gpu@", files["create_jobs.sh"])
+        self.assertIn("artifacts repositories describe serializa-audio-repo", files["bootstrap.sh"])
+        self.assertNotIn("artifacts repositories create", files["bootstrap.sh"])
+        self.assertNotIn("artifacts repositories add-iam-policy-binding", files["bootstrap.sh"])
         self.assertIn("--build-config=counter_presencial_vnext/cloudbuild.yaml", files["create_trigger.sh"])
         self.assertIn("counter_presencial_vnext/**", files["create_trigger.sh"])
         for key, old_value in {

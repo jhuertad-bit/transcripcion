@@ -6,8 +6,15 @@
    Incluir todos los archivos nuevos: hay dos entornos de modelos y sus locks.
 2. Mantener nuestro activador existente apuntando a
    `counter_presencial_vnext/cloudbuild.yaml`.
-3. Mantener `_SOURCE_DIR=counter_presencial_vnext` y `_REGION=us-central1`.
+3. Mantener `_SOURCE_DIR=counter_presencial_vnext`, `_REGION=us-central1` y
+   `_REPOSITORY=serializa-audio-repo`.
 4. Hacer push y comprobar un **build nuevo con el commit nuevo**.
+
+Las imágenes se publican en `serializa-audio-repo/counter-presencial-vnext/cpu`
+y `serializa-audio-repo/counter-presencial-vnext/gpu`. Confirmar que la cuenta
+seleccionada en el activador puede publicar en `serializa-audio-repo`.
+El build anterior apunta a la ruta antigua. Si hace falta lanzar uno
+manualmente, ejecutar el activador de VNext sobre el commit nuevo.
 
 No basta con cambiar la línea de NeMo de la entrega anterior. Llegan juntos
 los Dockerfiles, requirements/constraints, el ejecutor separado de Canary,
@@ -58,7 +65,6 @@ roles, usar `--roles-only ID_DEL_LOTE`.
 
 ## Qué está validado y qué falta
 
-Las pruebas offline, instalaciones limpias y los imports se verifican antes
-de entregar. Los checks de imagen no descargan pesos ni llaman a Gemini.
-Falta confirmar la compilación Docker en GCP y el primer audio en L4; no hay
-una garantía de cero errores de infraestructura, permisos o calidad.
+El build `8c496026…` compiló las imágenes CPU y GPU. La publicación falló en
+la ruta anterior. Queda validar la publicación en `serializa-audio-repo` y
+ejecutar el primer audio en L4.
