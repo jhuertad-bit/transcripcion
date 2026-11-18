@@ -29,7 +29,7 @@ def grant(project, token=None, opener=None):
             return json.load(response)
 
     policy = call("getIamPolicy", {"options": {"requestedPolicyVersion": 3}})
-    role, member = "roles/bigquery.connectionUser", "serviceAccount:" + resources.account("roles")
+    role, member = "roles/bigquery.connectionUser", "serviceAccount:" + resources.account("pipeline")
     bindings = policy.setdefault("bindings", [])
     binding = next((b for b in bindings if b.get("role") == role and not b.get("condition")), None)
     if binding is None:

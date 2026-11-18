@@ -1,10 +1,13 @@
-FROM python:3.11-slim-bookworm
+FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
-COPY docker/requirements-cpu.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt \
-    && python -m spacy download es_core_news_md \
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY docker/requirements-cpu.txt docker/constraints-cpu.txt /app/docker/
+COPY docker/constraints-gpu.txt docker/constraints-canary.txt /app/docker/
+RUN pip install --no-cache-dir -r docker/requirements-cpu.txt -c docker/constraints-cpu.txt \
     && pip check \
+    && python -c "from google.cloud import bigquery, storage; from presidio_analyzer import AnalyzerEngine; import es_core_news_md; assert es_core_news_md.load().lang == 'es'" \
     && pip freeze > /app/resolved-requirements.txt
 COPY counter_presencial/ /app/counter_presencial/
 ENTRYPOINT ["python", "-m", "counter_presencial.main"]

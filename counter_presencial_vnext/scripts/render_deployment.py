@@ -57,8 +57,9 @@ def render(settings):
         "PRESENCIAL_BQ_RESULTS_TABLE": r.table("counter_presencial_resultados_vnext"),
         "PROCESS_DAY_FROM": first, "PROCESS_DAY_TO": last,
         "ASR_BACKEND": "canary", "DIARIZATION_BACKEND": "nemotron",
+        "MANIFEST_GCS_ROOT": r.output_root + "/manifests", "ROLE_ENABLED": "true",
         "CANARY_REVISION": settings["canary_revision"], "NEMOTRON_REVISION": settings["nemotron_revision"],
-        "PRESENCIAL_FILES_PER_TASK": "3", "PRESENCIAL_MAX_CONVERSATIONS": "100",
+        "PRESENCIAL_FILES_PER_TASK": "1", "PRESENCIAL_MAX_CONVERSATIONS": "3",
     }
     # JSON is a YAML subset and can be passed to gcloud --env-vars-file.
     files["runtime.env.yaml"] = json.dumps(env, indent=2) + "\n"
@@ -94,18 +95,17 @@ def render(settings):
     base.append(command("bq", "--project_id=" + p, "--location=US", "mk", "--dataset", p + ":" + DATASET))
     base.append(command("bq", "--project_id=" + p, "--location=US", "mk", "--connection",
                         "--connection_type=CLOUD_RESOURCE", p + ".us." + PREFIX + "-gemini"))
-    for stage, role in (("prepare", "roles/bigquery.jobUser"),
-                        ("roles", "roles/bigquery.jobUser"), ("build", "roles/logging.logWriter")):
+    for stage, role in (("pipeline", "roles/bigquery.jobUser"), ("build", "roles/logging.logWriter")):
         base.append(grant(r.account(stage), role))
     files["dataset_access.sql"] = "\n".join(
         f'GRANT `{role}` ON SCHEMA `{p}.{DATASET}` TO "serviceAccount:{r.account(stage)}";'
-        for stage, role in (("prepare", "roles/bigquery.dataViewer"), ("roles", "roles/bigquery.dataEditor"))) + "\n"
+        for stage, role in (("pipeline", "roles/bigquery.dataEditor"),)) + "\n"
     base.append(command("bq", "--project_id=" + p, "--location=US", "query", "--use_legacy_sql=false")
                 + " < generated/dataset_access.sql")
     base.append(command("python3", "scripts/grant_connection.py", p))
-    for stage in ("prepare", "gpu"):
+    for stage in ("pipeline",):
         base.append(bucket_grant("input", r.account(stage), "roles/storage.objectViewer"))
-    for stage in ("prepare", "gpu", "roles"):
+    for stage in ("pipeline",):
         base.append(bucket_grant("output", r.account(stage), "roles/storage.objectUser"))
     for stage in ("workflow", "operator"):
         base.append(bucket_grant("output", r.account(stage), "roles/storage.objectViewer"))
@@ -127,24 +127,19 @@ def render(settings):
         "--region=" + region, "--service-account=projects/" + p + "/serviceAccounts/" + r.account("build"),
         "--gcs-source-staging-dir=gs://" + r.bucket("builds") + "/source") + "\n"
     job_lines = [header,
-        ': "${CPV_CPU_DIGEST:?Set the sha256 digest produced by the NEW CPU build}"',
         ': "${CPV_GPU_DIGEST:?Set the sha256 digest produced by the NEW GPU build}"',
-        '[[ "$CPV_CPU_DIGEST" =~ ^sha256:[a-f0-9]{64}$ && "$CPV_GPU_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 2']
-    for stage, account, image in (("prepare", "prepare", "cpu"), ("gpu", "gpu", "gpu"), ("roles", "roles", "cpu")):
-        flags = ["--region=" + region, "--service-account=" + r.account(account),
-                 "--args=" + ("acoustic" if stage == "gpu" else stage), "--env-vars-file=generated/runtime.env.yaml",
-                 "--tasks=1", "--parallelism=1", "--max-retries=0", "--task-timeout=3600s"]
-        if stage == "gpu":
-            flags += ["--cpu=4", "--memory=16Gi", "--gpu=1", "--gpu-type=nvidia-l4", "--no-gpu-zonal-redundancy"]
-        else:
-            flags += ["--cpu=2", "--memory=8Gi"]
-        image_path = f"{region}-docker.pkg.dev/{p}/{PREFIX}/{PREFIX}-{image}"
-        job_lines.append(gc("run", "jobs", "create", PREFIX + "-" + stage, *flags)
-                         + f' --image="{image_path}@${{CPV_{image.upper()}_DIGEST}}"')
-        for principal in ("operator", "workflow"):
-            for role in ("roles/run.jobsExecutorWithOverrides", "roles/run.viewer"):
-                job_lines.append(gc("run", "jobs", "add-iam-policy-binding", PREFIX + "-" + stage,
-                    "--region=" + region, "--member=serviceAccount:" + r.account(principal), "--role=" + role))
+        '[[ "$CPV_GPU_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 2']
+    flags = ["--region=" + region, "--service-account=" + r.account("pipeline"),
+             "--env-vars-file=generated/runtime.env.yaml", "--tasks=1", "--parallelism=1",
+             "--max-retries=0", "--task-timeout=3600s", "--cpu=8", "--memory=32Gi",
+             "--gpu=1", "--gpu-type=nvidia-l4", "--no-gpu-zonal-redundancy"]
+    image = f"{region}-docker.pkg.dev/{p}/{PREFIX}/{PREFIX}-gpu"
+    job_lines.append(gc("run", "jobs", "create", PREFIX + "-gpu", *flags)
+                     + f' --image="{image}@${{CPV_GPU_DIGEST}}"')
+    for principal in ("operator", "workflow"):
+        for role in ("roles/run.jobsExecutorWithOverrides", "roles/run.viewer"):
+            job_lines.append(gc("run", "jobs", "add-iam-policy-binding", PREFIX + "-gpu",
+                "--region=" + region, "--member=serviceAccount:" + r.account(principal), "--role=" + role))
     files["create_jobs.sh"] = "\n".join(job_lines) + "\n"
 
     owner, repo = repository.split("/")
@@ -155,8 +150,8 @@ def render(settings):
         "--included-files=" + ("**" if source_dir == "." else source_dir + "/**"),
         "--substitutions=_SOURCE_DIR=" + source_dir,
         "--service-account=projects/" + p + "/serviceAccounts/" + r.account("build")) + "\n"
-    wf_env = {"PROJECT_ID": p, "LOCATION": region, "GPU_LOCATION": region,
-              "PRESENCIAL_OUTPUT_GCS_ROOT": r.output_root}
+    wf_env = {"PROJECT_ID": p, "LOCATION": region, "JOB_NAME": PREFIX + "-gpu",
+              "MANIFEST_GCS_ROOT": r.output_root + "/manifests", "ROLE_ENABLED": "true"}
     files["workflow.env.yaml"] = json.dumps(wf_env, indent=2) + "\n"
     files["optional_workflow.sh"] = header + "# Optional; start with manual Jobs. Refuse to update an existing workflow.\n" + (
         "CPV_EXISTING=$(" + gc("workflows", "list", "--location=" + region, "--format=value(name)",
@@ -167,13 +162,18 @@ def render(settings):
         "--service-account=" + r.account("workflow")) + "\n"
 
     manual = [header,
-        "# The caller needs Token Creator on the NEW cpv-operator service account.",
+        "# Same prepare -> worker -> roles contract as Paul's pipeline, on our own Job.",
+        "# The caller needs Token Creator only on cpv-operator.",
+        'CPV_ROLES_ONLY=0',
+        'if [[ "${1:-}" == "--roles-only" ]]; then CPV_ROLES_ONLY=1; shift; [[ "$#" == 1 ]] || exit 2; fi',
+        '[[ "$#" -le 1 ]] || exit 2',
         'CPV_BATCH="${1:-$(python3 -c \'import uuid; print(uuid.uuid4().hex)\')}"',
         '[[ "$CPV_BATCH" =~ ^[A-Za-z0-9_-]{1,128}$ ]] || exit 2']
     operator = "--impersonate-service-account=" + r.account("operator")
+    def execute():
+        return gc("run", "jobs", "execute", PREFIX + "-gpu", "--region=" + region, operator, "--wait")
     manual.append('if [[ "$#" == 0 ]]; then')
-    manual.append("  " + gc("run", "jobs", "execute", PREFIX + "-prepare", "--region=" + region,
-                     operator, "--wait") + ' --update-env-vars="BATCH_ID=${CPV_BATCH}"')
+    manual.append("  " + execute() + ' --tasks=1 --update-env-vars="JOB_ROLE=prepare,BATCH_ID=${CPV_BATCH}"')
     manual.append("fi")
     manual.append('CPV_META=$(gcloud storage cat "' + r.output_root + '/manifests/${CPV_BATCH}.json.meta.json" '
                   + command("--project=" + p, "--billing-project=" + p, operator) + ")")
@@ -181,13 +181,12 @@ def render(settings):
     manual.append('if [[ "$CPV_TASKS" == 0 ]]; then echo "No ready conversations"; exit 0; fi')
     manual.append('[[ "$CPV_TASKS" =~ ^[1-9][0-9]*$ ]] || exit 2')
     manual.append('CPV_MANIFEST="' + r.output_root + '/manifests/${CPV_BATCH}.json"')
-    manual.append("CPV_PARTIAL=0")
-    manual.append(gc("run", "jobs", "execute", PREFIX + "-gpu", "--region=" + region, operator, "--wait")
-                  + ' --tasks="$CPV_TASKS" --update-env-vars="MANIFEST_URI=${CPV_MANIFEST}" || CPV_PARTIAL=1')
-    manual.append(gc("run", "jobs", "execute", PREFIX + "-roles", "--region=" + region, operator, "--wait")
-                  + ' --update-env-vars="MANIFEST_URI=${CPV_MANIFEST}" || CPV_PARTIAL=1')
-    manual.append('exit "$CPV_PARTIAL"')
+    manual.append('if [[ "$CPV_ROLES_ONLY" == 0 ]]; then')
+    manual.append("  " + execute() + ' --tasks="$CPV_TASKS" --update-env-vars="JOB_ROLE=worker,MANIFEST_URI=${CPV_MANIFEST}"')
+    manual.append("fi")
+    manual.append(execute() + ' --tasks=1 --update-env-vars="JOB_ROLE=roles,MANIFEST_URI=${CPV_MANIFEST}"')
     files["run_manual.sh"] = "\n".join(manual) + "\n"
+
     return files
 
 

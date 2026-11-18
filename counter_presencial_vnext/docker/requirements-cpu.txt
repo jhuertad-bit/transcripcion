@@ -1,5 +1,6 @@
-# Separate CPU image: no torch, CUDA, NeMo or Whisper. Freeze resolved dependencies after pilot build.
+# CPU/controller dependencies. Spanish model is pinned; no download on first Job.
 google-cloud-storage>=3.0,<4
 google-cloud-bigquery>=3.30,<4
 presidio-analyzer>=2.2,<3
 spacy>=3.8,<3.9
+es-core-news-md @ https://github.com/explosion/spacy-models/releases/download/es_core_news_md-3.8.0/es_core_news_md-3.8.0-py3-none-any.whl

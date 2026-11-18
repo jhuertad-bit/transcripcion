@@ -1,11 +1,11 @@
 # Build only. _SOURCE_DIR selects this project's root inside the fetched source.
 # Explicit project/SA/staging bucket are supplied by generated build.sh.
 steps:
-  - name: python:3.11-slim-bookworm
+  - name: python:3.12-slim-bookworm
     dir: '${_SOURCE_DIR}'
     entrypoint: python
     args: ['-B', '-c', 'import sys; from counter_presencial.isolation import Resources; Resources(sys.argv[1])', '$PROJECT_ID']
-  - name: python:3.11-slim-bookworm
+  - name: python:3.12-slim-bookworm
     dir: '${_SOURCE_DIR}'
     entrypoint: python
     args: ['-B', '-m', 'unittest', 'discover', '-s', 'tests']

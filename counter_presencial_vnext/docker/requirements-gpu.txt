@@ -1,9 +1,9 @@
-# Candidate runtime, not yet validated by a Cloud Build/L4 execution.
-nemo_toolkit[asr]==2.5.0
-transformers==5.21.0
-huggingface-hub>=0.34,<2
-soundfile>=0.13,<1
-google-cloud-storage>=3.0,<4
-google-cloud-bigquery>=3.30,<4
+# Controller + Nemotron environment. Exact Transformers source revision from SAXO.
+-r requirements-cpu.txt
 torch==2.8.0
 torchaudio==2.8.0
+transformers @ https://github.com/huggingface/transformers/archive/07338b6c74a578868368e6e549dea83414e4b8cb.zip
+huggingface-hub==1.33.0
+tokenizers==0.23.2
+librosa==1.0.0
+soundfile>=0.13,<1

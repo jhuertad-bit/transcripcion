@@ -1,0 +1,7 @@
+# Canary-only environment; NeMo/Torch profile from the real SAXO native run.
+# Transformers 4.x never shares site-packages with Nemotron's 5.x.
+nemo_toolkit[asr]==2.7.3
+torch==2.8.0
+torchaudio==2.8.0
+transformers==4.57.6
+soundfile>=0.13,<1

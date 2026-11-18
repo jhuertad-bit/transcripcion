@@ -3,11 +3,12 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
 
 from counter_presencial.shared import parse_gcs_uri
 
-VERSION = "counter-presencial-vnext-1"
+VERSION = "counter-presencial-vnext-2-saxo"
 
 
 def digest(value):
@@ -37,6 +38,8 @@ class Config:
     targets_per_call: int = 40
     max_second_pass: int = 8
     max_first_pass_calls: int = 64
+    speaker_min_seconds: float = 1.0
+    speaker_min_ratio: float = 0.01
 
     def __post_init__(self):
         _, path = parse_gcs_uri(self.output_root.rstrip("/") + "/")
@@ -55,6 +58,8 @@ class Config:
                 raise ValueError("Resource limits must be positive integers")
         if not 0 <= self.max_second_pass <= 20 or self.window_seconds > 30:
             raise ValueError("Invalid review/window budget")
+        if self.speaker_min_seconds < 0 or not 0 <= self.speaker_min_ratio <= 1:
+            raise ValueError("Invalid significant speaker policy")
 
     @classmethod
     def from_env(cls):
@@ -85,8 +90,18 @@ class Config:
         data = asdict(self)
         names = ("canary_model", "canary_revision", "nemotron_model", "nemotron_revision",
                  "asr_backend", "diarization_backend", "window_seconds", "max_audio_seconds")
-        return {"version": VERSION, **{k: data[k] for k in names},
-                "speech_gate": "full_audio_conservative", "precision": "float32_asr_bfloat16_diar"}
+        root = Path(__file__).resolve().parents[1]
+        tracked = [root / "docker" / name for name in ("constraints-gpu.txt", "constraints-canary.txt")]
+        tracked += [Path(__file__).with_name(name) for name in (
+            "acoustics.py", "canary_worker.py", "canary_process.py", "saxo_canary_quality.py",
+            "saxo_canary_nemo_timestamps.py", "saxo_nemotron_four.py", "saxo_turn_candidates.py")]
+        signature = digest({str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in tracked})
+        return {"version": VERSION, "runtime_and_processing_sha256": signature, **{k: data[k] for k in names},
+                "speech_gate": "saxo_nemotron4_acoustic_activity_proxy",
+                "speaker_min_seconds": self.speaker_min_seconds,
+                "speaker_min_ratio": self.speaker_min_ratio,
+                "runtime": "saxo-transformers-07338b6-canary-nemo-2.7.3-isolated",
+                "precision": "float32_asr_bfloat16_diar"}
 
     def require_pinned_models(self):
         for name in ("canary", "nemotron"):

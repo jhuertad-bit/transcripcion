@@ -1,79 +1,75 @@
-# Counter Presencial VNext — pipeline independiente
+# Counter Presencial — flujo de ejecución
 
-## Procesamiento
+## Contrato con la orquestación de Paul
 
-1. **Prepare (CPU):** consulta exclusivamente el catálogo propio, agrupa audios por
-   conversación, comprueba integridad y fija generaciones de objetos. Publica un
-   manifiesto y sus particiones en el bucket propio de salida.
-2. **Acoustic (L4):** descarga copias de los audios del bucket propio. Normaliza una
-   vez a mono/16 kHz, mantiene modelos cargados por tarea y ejecuta Nemotron para
-   intervalos acústicos y Canary para texto y timestamps nativos de NeMo/CTC.
-   Procesa ventanas de 24 s con contexto; cada palabra pertenece a una ventana por
-   su punto medio. Conserva todos los canales acústicos; marca más de cuatro voces.
-3. **Roles (CPU):** oculta datos personales localmente y entrega a Gemini toda la
-   conversación en texto. Cada solicitud clasifica un conjunto de turnos, siempre
-   con contexto global. El prompt español adapta las reglas de SAXO V3.1:
-   representación institucional frente a necesidad personal, acompañantes como
-   CLIENTE, sin alternancia forzada ni asignación por orden o número de voz.
-4. **Fusión:** conserva el rol inicial y contrasta evidencia acústica independiente.
-   Usa anclas originales, cobertura, pureza, consenso y exclusión del propio turno.
-   Una segunda revisión contextual tiene presupuesto limitado y caché. Mantiene
-   INCIERTO cuando la evidencia no alcanza.
-5. **Publicación:** JSON, TXT, serialización y MERGE idempotente en la tabla propia.
-   Cada etapa y respuesta validada tienen caché. Reintentar roles no repite GPU.
+Se conserva un único Job y los modos `JOB_ROLE=prepare|worker|roles`.
+El manifiesto y su archivo `.meta.json` contienen count/task_count. Workflows
+o Cloud Shell llaman las etapas en orden, y roles_only reutiliza el manifiesto.
+Los nombres y destinos pertenecen exclusivamente a Counter Presencial VNext.
 
-Gemini asigna roles por intervención; no recibe audio en este diseño ni crea
-identidades físicas de voz. Los speakers acústicos provienen de Nemotron. El prompt
-no contiene esos speakers en la primera pasada. Los roles permitidos son
-ASESOR/CLIENTE/INCIERTO y requieren evidencia referenciada por turn_id. No se usan
-porcentajes de confianza inventados por el modelo como probabilidades calibradas.
+## Prepare
 
-## Integridad de la conversación
+Consulta el catálogo propio por process_day, agrupa la conversación completa,
+verifica fuentes y fija generaciones GCS. Los fragmentos necesitan continuidad
+demostrable. Las conversaciones sin ese dato quedan en needs_source_review.
+Los lotes omiten las ya publicadas antes de aplicar el límite.
 
-Preferir un audio original completo copiado al bucket nuevo. Los fragmentos
-necesitan índices contiguos, offsets reales y recording_complete=true. Se valida
-continuidad a una muestra tras decodificar; no se cierran huecos artificialmente.
-Sin metadatos suficientes, la conversación queda en needs_source_review.
-El mapa opcional PRESENCIAL_ORIGINALS_MAP_URI también debe estar en el bucket de
-entrada propio. Las referencias del catálogo deben apuntar a las copias nuevas.
+## Worker GPU
 
-No se inventan timestamps si falla la correspondencia entre texto y palabras
-alineadas: se conserva texto y se marca revisión. Un problema de tiempos no impide
-por sí solo clasificar el contenido textual; texto sospechoso sí exige revisión.
+1. Normalización única por conversación a mono/16 kHz.
+2. Nemotron en el runtime Transformers de SAXO. Inspección de todos los canales
+   y selección de hasta cuatro significativos con el mismo umbral combinado.
+   Un quinto significativo falla y queda registrado; no se oculta.
+3. Guardar el timeline acústico. Liberar Nemotron antes de cargar Canary.
+4. Formar ventanas con la unión de intervalos de voz, padding 0.20 s, unión de
+   huecos hasta 0.55 s y máximo 24 s. Esto es un proxy acústico, no VAD de referencia.
+5. Canary 1B v2 en NeMo 2.7.3 dentro de un subproceso Python separado,
+   español→español con timestamps=True y CTC auxiliar. No se ejecuta WhisperX.
+6. Limpiar bucles extremos preservando el texto válido, texto bruto y auditoría.
+   Tiempos inexistentes, inválidos o incompatibles con el texto se conservan
+   como no alineados. No se estiman a partir del borde de la ventana.
+7. Crear candidatos con la función de SAXO por palabras, pausas y puntuación,
+   sin exigir speaker_id. Conservar cada palabra y registrar el motivo del
+   corte. Guardar JSON, procedencia, versiones y contadores de calidad.
 
-## Ejecución
+Los checkpoints guardan el timeline y cada ventana terminada dentro de la
+clave acústica. No se publica completed.json hasta completar la conversación.
+Se verifican la integridad y las generaciones al recuperar una etapa.
+El proceso Canary tiene un timeout acotado y se termina si el protocolo falla.
+Los logs de librerías van a un archivo temporal privado, no al canal JSONL.
 
-Desde esta carpeta independiente, después de configurar sus recursos propios:
+## Roles
 
-```bash
-python -m counter_presencial.main prepare
-python -m counter_presencial.main acoustic
-python -m counter_presencial.main roles
-```
+Esta etapa incluye la atribución contextual por intervención que realiza JEV
+en SAXO, ahora con Gemini. No impone un rol fijo por voz ni agrupa distintas
+personas porque compartan el rol CLIENTE. Como en esas ramas, el modelo no
+reescribe palabras, tiempos o límites de intervención. Los bloques mixtos
+que no se puedan atribuir con fundamento quedan para revisión.
 
-Las etapas acústicas requieren GPU CUDA. Los contenedores CPU no instalan Torch.
-El proceso principal valida los nombres de recursos antes de crear clientes GCP.
-No importa worker, counter_common ni otro módulo del proyecto original.
+Ocultamiento local de PII, Gemini con toda la conversación para cada conjunto
+de objetivos, validación de IDs/evidencias y conservación del rol inicial.
+El prompt adapta V3.1 para orientación universitaria, contacto, seguimiento,
+familiares y disponibilidad; no fuerza alternancia ni roles por palabras sueltas.
+Los porcentajes de JEV no se copian como probabilidades de Gemini.
 
-## Límites iniciales
+Fusión con el timeline de Nemotron: cobertura, pureza, solapamiento y anclajes
+originales independientes. Los roles inferidos no se reutilizan como anclajes.
+Los conflictos se ponen en cuarentena y una segunda pasada limitada puede
+revisarlos con el diálogo y ejemplos acústicos. Si no alcanza la evidencia,
+se mantiene INCIERTO. role_initial y role_final permanecen separados.
 
-- Máximo 100 conversaciones por lote, tres por tarea, GPU con paralelismo 1.
-- Máximo 7.200 s y 500 MiB comprimidos por conversación.
-- Hasta 180.000 caracteres por prompt; no se trunca silenciosamente.
-- Hasta 40 objetivos por llamada, 64 intentos lógicos de primera pasada y ocho
-  revisiones por conversación; estados transitorios de Gemini tienen reintento acotado.
-- Revisiones y presupuestos se configuran con las variables PRESENCIAL_* del código.
-- ASR: Canary; diarización: Nemotron o none para diagnóstico explícito.
+Publicación JSON/TXT y MERGE idempotente sobre la tabla propia. Un reintento de
+publicación no repite GPU ni llamadas Gemini ya guardadas. Una conversación
+sin actividad acústica significativa guarda el descarte y no llama a los modelos
+de texto. El resultado no se presenta como precisión validada.
 
-## Estado de validación
+## Operación
 
-Pruebas offline de contratos, prompts, evidencias, fusión, caché, reanudación,
-leases e independencia de recursos. No se ha construido ni ejecutado la imagen
-candidata en L4, llamado a Gemini ni medido calidad/costo con los audios reales.
-Los pins de checkpoints deben seleccionarse antes del piloto. El checkpoint y la
-versión NeMo deben exponer timestamps nativos; si no, el proceso falla explícitamente.
+Piloto: una conversación por tarea, máximo tres por lote, paralelismo 1.
+El Job único tiene GPU asignada también en los modos CPU, como compromiso de
+mantener el esquema operativo. No se crea Scheduler ni se ejecuta automáticamente
+al compilar. El Workflow propio es opcional para las primeras pruebas.
 
-Antes de promover: construir ambas imágenes, comprobar imports/VRAM, ejecutar
-3–5 conversaciones etiquetadas, revisar omisiones, roles, solapamientos, precisión
-de timestamps y ocultamiento de datos; medir latencia y costo total por hora de
-audio. No se garantiza anonimización exhaustiva con Presidio y regex.
+La configuración rechaza recursos fuera de nuestro namespace. Las cuotas por
+proyecto/región siguen compartidas en PRD. Nada de esta carpeta importa ni
+modifica módulos del proyecto original.

@@ -1,146 +1,133 @@
-# Counter Presencial VNext — entrega independiente
+# Counter Presencial VNext — compatible con el workflow de Paul
 
-Este directorio es un proyecto ejecutable por sí solo. El destino acordado es
-**`prd-utpbi-data-operation`**, con **recursos exclusivos de Counter Presencial
-VNext**. No hace falta crear otro proyecto GCP. Puede alojarse en la carpeta
-`counter_presencial_vnext/` del repositorio de Paul, con un activador propio que
-solo compile esa carpeta. Esta entrega no ejecuta despliegues ni crea recursos.
+Esta entrega conserva el contrato de orquestación de Counter: **un Job nuevo**
+con `JOB_ROLE=prepare → worker → roles`, manifiestos en GCS, BigQuery y
+reanudación de roles. Se ejecuta en `prd-utpbi-data-operation` con recursos
+exclusivos. El código de Paul y sus recursos no se modifican.
 
-El proyecto original de Paul permanece byte por byte como en el ZIP recibido.
-Esta carpeta contiene el procesamiento Canary + Nemotron + roles contextuales con
-Gemini, sus utilidades locales, pruebas, imágenes y configuración propias.
-No importa ni necesita ejecutar componentes del proyecto original.
+La implementación de audio toma como referencia las tres ramas de SAXO
+Presencial. Ver [SAXO_COMPATIBILITY.md](SAXO_COMPATIBILITY.md) para los commits,
+las decisiones conservadas y los límites de la validación.
 
-Para corregir la compilación actual de Paul, comenzar por [PARA_PAUL.md](PARA_PAUL.md).
+## Qué contiene
+
+- Nemotron con el Transformers fijado por SAXO, canales significativos y límite
+  de cuatro; un quinto canal significativo produce un error revisable.
+- Ventanas de voz y limpieza conservadora de bucles tomadas de SAXO.
+- Canary 1B v2 con NeMo **2.7.3** y timestamps del CTC auxiliar, en otro entorno
+  Python dentro de la misma imagen. Las dos versiones de Transformers no se mezclan.
+- Nemotron se descarga de VRAM antes de cargar Canary. El proceso de NeMo se
+  cierra antes de volver a cargar Nemotron; no hay dos modelos GPU residentes.
+- Gemini sobre el diálogo completo, reglas de contacto/seguimiento V3.1
+  adaptadas, fusión y revisión selectiva. Los números de confianza de JEV no
+  se trasladan a Gemini.
+- Checkpoints de diarización y por ventana: un reintento reutiliza lo terminado.
+- Audios sin actividad significativa no invocan Canary ni Gemini; el resultado
+  conserva la razón del descarte. Es una política acústica, no verdad de referencia.
+
+## Compilación: primer paso para Paul
+
+Ver [PARA_PAUL.md](PARA_PAUL.md). Reemplazar únicamente esta carpeta en el repo,
+incluyendo los archivos nuevos, y hacer push al activador propio existente.
+
+| Configuración | Valor |
+|---|---|
+| YAML | `counter_presencial_vnext/cloudbuild.yaml` |
+| `_SOURCE_DIR` | `counter_presencial_vnext` |
+| `_REGION` | `us-central1` |
+| Filtro incluido | `counter_presencial_vnext/**` |
+
+El build publica imágenes CPU y GPU en el repositorio propio de Artifact
+Registry `counter-presencial-vnext`. **No crea ni ejecuta Jobs**. El Job único
+usa la imagen GPU, que incluye las dependencias de preparación y roles.
+La imagen CPU permite diagnósticos o ejecución CPU explícita de esas etapas.
+
+Revisar antes del build que el repositorio de imágenes y la cuenta de
+compilación tengan los permisos necesarios. No se modifica el activador de
+otros proyectos. El activador de esta carpeta puede seguir llamándose
+`deploy-counter-presencial-vnext`.
 
 ## Recursos propios
 
-`PROJECT_ID` es `prd-utpbi-data-operation` en el despliegue acordado.
-
-| Componente | Nombre o destino nuevo |
+| Recurso | Nombre |
 |---|---|
-| Job de preparación CPU | `counter-presencial-vnext-prepare` |
-| Job de audio GPU | `counter-presencial-vnext-gpu` |
-| Job de roles CPU | `counter-presencial-vnext-roles` |
-| Activador Cloud Build | `counter-presencial-vnext-build` |
-| Repositorio Artifact Registry | `counter-presencial-vnext` |
-| Imágenes | `counter-presencial-vnext-cpu`, `counter-presencial-vnext-gpu` |
+| Job único | `counter-presencial-vnext-gpu` |
+| Modos del Job | `prepare`, `worker`, `roles` |
+| Cuenta del Job | `cpv-pipeline@PROJECT_ID.iam.gserviceaccount.com` |
+| Otras cuentas | `cpv-build`, `cpv-workflow`, `cpv-operator` |
 | Buckets | `PROJECT_ID-cpv-input`, `PROJECT_ID-cpv-output`, `PROJECT_ID-cpv-builds` |
-| Dataset BigQuery | `PROJECT_ID.counter_presencial_vnext` |
-| Catálogo físico de entrada | `catalog_vnext` en ese dataset |
-| Tabla y vista de salida | `counter_presencial_resultados_vnext`, `counter_presencial_segmentos_vnext` |
-| Modelo remoto BigQuery | `gemini_roles_vnext` en ese dataset |
-| Conexión BigQuery–Gemini | `PROJECT_ID.us.counter-presencial-vnext-gemini` |
-| Cuentas de servicio | `cpv-prepare`, `cpv-gpu`, `cpv-roles`, `cpv-build`, `cpv-workflow`, `cpv-operator` |
+| Prefijo de salida | `gs://PROJECT_ID-cpv-output/presencial-vnext` |
+| Dataset | `PROJECT_ID.counter_presencial_vnext` |
+| Catálogo | `catalog_vnext` |
+| Tabla / vista | `counter_presencial_resultados_vnext`, `counter_presencial_segmentos_vnext` |
+| Modelo remoto / conexión | `gemini_roles_vnext` / `counter-presencial-vnext-gemini` |
 | Workflow opcional | `counter-presencial-vnext` |
-| Scheduler, Eventarc y Pub/Sub | Sin configurar: primera prueba manual |
-| Cachés, manifiestos y locks | Solo dentro del bucket nuevo de salida |
-| Logs y consumo de APIs | PRD; identificar los Jobs y cuentas `cpv-*` |
 
-El endpoint administrado de Gemini es un servicio de Google: usamos el mismo
-producto, pero con modelo remoto, conexión e identidad propios dentro de PRD. No se referencia el modelo remoto ni la conexión de Paul. Los checkpoints
-públicos de NVIDIA tampoco son componentes desplegados por Paul.
+No reutilizar Jobs, tablas, cuentas, conexión Gemini ni buckets de Paul. Copiar
+los audios y metadatos al catálogo propio. Las cuotas por proyecto y región
+sí se comparten en PRD: coordinar la prueba con Paul.
 
-Las cuotas **por proyecto y región** de GPU, Cloud Build y Gemini se comparten
-con el resto de PRD. Separar nombres, datos y permisos evita interferencias en
-los recursos existentes, pero no reserva cuota ni capacidad. Antes del piloto,
-verificar cuota L4 sin redundancia zonal en la región elegida y coordinar el uso
-con Paul. El perfil inicial sigue usando `us-central1`; no presupone cuota allí.
+## Configurar y ejecutar
 
-## Preparación para Paul
-
-1. Usar el proyecto existente `prd-utpbi-data-operation` y comprobar sus cuotas y
-   permisos. No ejecutar Jobs de Paul para probar nuestra implementación.
-2. Subir esta carpeta actualizada al repositorio y crear un activador nuevo.
-   En `jhuertad-bit/transcripcion`, el YAML es
-   `counter_presencial_vnext/cloudbuild.yaml` y `_SOURCE_DIR=counter_presencial_vnext`.
-   El filtro del activador debe incluir solo `counter_presencial_vnext/**`.
-3. Copiar `deployment.example.json` a `deployment.local.json`. Mantener el proyecto
-   PRD, revisar el inventario y poner `isolated_resources_confirmed: true` cuando
-   se confirme que los recursos nombrados serán exclusivos. Elegir commits
-   inmutables de los modelos y un endpoint Gemini disponible en PRD. Ajustar fechas.
-4. Ejecutar **solo la generación local**:
+1. Copiar `deployment.example.json` a `deployment.local.json`. Completar los
+   commits de los dos modelos, el endpoint Gemini disponible en PRD y las fechas.
+   Revisar el inventario de recursos exclusivos y establecer
+   `isolated_resources_confirmed=true`.
+2. Ejecutar `python3 scripts/render_deployment.py deployment.local.json`.
+   Solo genera archivos locales; no contacta GCP. Si ya existe `generated/`
+   de una entrega anterior, conservarlo aparte y generar uno nuevo para evitar
+   ejecutar los antiguos scripts de tres Jobs.
+3. Revisar `generated/inventory.json` y `bootstrap.sh`. Este último crea los
+   recursos propios y permisos. Se detiene si un recurso existe; comprobar qué
+   ya está creado y aplicar solamente lo pendiente.
+4. Compilar mediante el activador existente o `bash generated/build.sh`.
+5. Exportar `CPV_GPU_DIGEST=sha256:...` del build aprobado y ejecutar
+   `bash generated/create_jobs.sh`. Crea solo el Job nuevo; no actualiza un
+   Job preexistente ni requiere el digest CPU. Si el nombre ya existe, describirlo
+   y comprobar su propiedad antes de decidir una actualización.
+6. Dar al operador humano Token Creator sobre `cpv-operator`. El Job usa
+   `cpv-pipeline` con permisos de datos únicamente sobre nuestros destinos.
+7. Copiar los audios completos a nuestro bucket, cargar el catálogo y ejecutar:
 
 ```bash
-python3 scripts/render_deployment.py deployment.local.json
+bash generated/run_manual.sh
+# Reintentar worker y roles del mismo lote, sin prepare:
+bash generated/run_manual.sh ID_DEL_LOTE
+# Repetir solo Gemini/publicación:
+bash generated/run_manual.sh --roles-only ID_DEL_LOTE
 ```
 
-Esto produce `generated/inventory.json`, SQL y scripts revisables. No contacta
-GCP, no configura credenciales y no ejecuta los comandos que escribe. El directorio
-`generated/` debe no existir; así no se sobrescribe una propuesta anterior.
+El script se detiene si worker falla; no continúa a roles como si el audio
+hubiera terminado. Los checkpoints permiten reintentar lo pendiente.
+Un único Job mantiene la GPU asignada también durante prepare/roles; se
+conserva este esquema para respetar el workflow operativo de Paul.
 
-## Aplicación posterior, por Paul
+El Workflow es opcional para el primer piloto. `generated/optional_workflow.sh`
+crea el nuestro si no existe; nunca reemplaza otro Workflow. Su grafo conserva
+prepare, manifiesto, worker, roles, `ROLE_ENABLED` y `roles_only` del original,
+con una comprobación adicional que rechaza un JOB_NAME diferente del nuestro.
 
-Revisar primero el inventario y los scripts. Los comandos siguientes crean o
-consumen recursos cuando Paul los ejecute: no forman parte de esta entrega aplicada.
-El generador no crea proyectos GCP ni ejecuta estos scripts automáticamente.
+## Modelo y conversación
 
-1. `bash generated/bootstrap.sh`: APIs, identidades nuevas, buckets, repositorio de
-   imágenes, dataset, catálogo físico, resultados, conexión y modelo remoto propios.
-   Usa operaciones de creación: si un recurso ya existe, se detiene en lugar de
-   adoptarlo o reemplazarlo. Ante fallo parcial, revisar qué se creó antes de continuar.
-2. Copiar audios completos a `gs://PROJECT_ID-cpv-input/...` y cargar metadatos en
-   `PROJECT_ID.counter_presencial_vnext.catalog_vnext`. Usar los campos de
-   `sql/catalog.sql.template`. **No crear una vista o tabla externa sobre recursos
-   de Paul, ni conservar URIs GCS de sus buckets.** Cada fila requiere process_day;
-   para audios completos basta gcs_uri, process_day y fechas de carga.
-3. `bash generated/build.sh`: prueba y construye ambas imágenes. No crea Jobs ni
-   ejecuta audios. Usa cuenta de compilación y bucket de staging nuevos.
-4. Revisar los digests publicados y exportar `CPV_CPU_DIGEST=sha256:...` y
-   `CPV_GPU_DIGEST=sha256:...`; después ejecutar `bash generated/create_jobs.sh`.
-   Crea tres Jobs nuevos por digest; no ejecuta Jobs automáticamente.
-5. Dar al operador humano permiso Token Creator únicamente sobre `cpv-operator`
-   del proyecto PRD para las pruebas por impersonación. Quien compile/cree
-   recursos también necesita permisos de administración y actAs sobre las cuentas
-   nuevas; no se incluyen llaves privadas ni se reutilizan cuentas de Paul.
-6. `bash generated/run_manual.sh`: invoca prepare, obtiene el número de tareas y
-   ejecuta GPU y roles directamente desde Cloud Shell, sin Workflows. Admite un ID
-   de lote como primer argumento para reintentos; las etapas conservan sus cachés.
-7. Opcional: `bash generated/create_trigger.sh` crea el activador propio para
-   compilar exclusivamente nuestra carpeta. El activador **solo construye imágenes**: actualizar
-   Jobs o procesar audios requiere una acción aparte. No se crea Scheduler.
-8. El Workflow independiente es opcional y se define en `workflows/`; su script
-   `generated/optional_workflow.sh` rechaza reemplazar nuestro workflow si ya existe.
-   No es necesario para el primer piloto ni elimina la necesidad de cuota GPU.
+Usar grabaciones completas. Para fragmentos se necesitan offsets reales,
+índices contiguos y `recording_complete=true`, o un mapa de originales en
+nuestro bucket. Sin esos datos, queda `needs_source_review`; no se inventa continuidad.
+El manifiesto fija generaciones GCS y revisiones de modelos, y el reintento
+rechaza otra configuración. Un cambio de esta versión invalida las cachés
+acústicas antiguas para no mezclar políticas.
 
-Todos los comandos generados fijan el proyecto explícitamente; no cambian el
-proyecto activo global de gcloud. Los permisos de datos BigQuery se limitan al
-dataset propio `counter_presencial_vnext`: prepare lee y roles publica. El permiso
-de conexión se asigna solo a nuestra conexión. GPU no tiene permisos BigQuery y
-los operadores reciben permisos de Cloud Run solo sobre nuestros tres Jobs.
-Las cuentas nuevas que consultan BigQuery necesitan Job User en PRD y la cuenta
-de nuestra conexión necesita Vertex AI User en PRD para invocar Gemini.
-
-## Pruebas y alcance
-
-Si esta carpeta está dentro de un repositorio con otros proyectos, el activador
-debe leer `counter_presencial_vnext/cloudbuild.yaml` y fijar la sustitución
-`_SOURCE_DIR=counter_presencial_vnext`. Los cuatro pasos usan ese directorio,
-incluidos ambos contextos Docker; los cambios de otros proyectos deben excluirse
-con el filtro de archivos `counter_presencial_vnext/**` del activador propio.
-Elegir el YAML dentro de una carpeta no cambia automáticamente el directorio de
-ejecución de Cloud Build. Sin esta configuración, el primer import falla con
-`ModuleNotFoundError: No module named 'counter_presencial'`.
-
-Cuando el contenido del proyecto está en la raíz de su repositorio, o se envía
-solo esta carpeta con `generated/build.sh`, se mantiene `_SOURCE_DIR=.` (default).
-No hace falta instalar dependencias para resolver este error de rutas.
+## Verificación y límites
 
 ```bash
 python -B -m unittest discover -s tests
 ```
 
-Las pruebas se ejecutan sin servicios cloud ni modelos reales. Cubren aislamiento
-contra configuración cruzada, imports independientes y sintaxis de los scripts
-además de los contratos del pipeline. Ver [PIPELINE.md](PIPELINE.md) para el detalle.
+Las pruebas offline cubren el contrato de Paul, contexto global, fusión,
+procesos, timeouts, silencios, bucles, checkpoints e independencia.
+Cada entorno tiene restricciones de dependencias propias y ejecuta imports
+reales/API checks durante el build. No se usa `--no-deps` para ocultar conflictos.
 
-Pendiente: revisar el build, crear recursos propios en PRD y conectar su activador,
-selección de checkpoints, build real del perfil candidato y validación con audio
-etiquetado. La entrega no equivale a un despliegue ni a un benchmark validado.
-
-Fuentes técnicas de configuración consultadas el 2026-11-17:
-- https://docs.cloud.google.com/run/docs/configuring/jobs/gpu
-- https://docs.cloud.google.com/run/quotas
-- https://docs.cloud.google.com/bigquery/docs/generate-table
-- https://docs.cloud.google.com/sdk/gcloud/reference/builds/triggers/create/github
-- https://docs.cloud.google.com/iam/docs/roles-permissions/run
+**Pendiente:** build Docker real en GCP, restauración de pesos e inferencia en
+L4, permisos/cuotas y piloto sobre audios reales. Los tests y los imports no
+demuestran exactitud de roles ni WER/DER. Ver el detalle del flujo en
+[PIPELINE.md](PIPELINE.md).

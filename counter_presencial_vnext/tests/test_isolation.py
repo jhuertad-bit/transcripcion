@@ -102,7 +102,7 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(policy["etag"], "original-etag")
         self.assertEqual(policy["bindings"][0], previous["bindings"][0])
         self.assertEqual(policy["bindings"][1]["members"], ["user:existing@example.com",
-            "serviceAccount:cpv-roles@prd-utpbi-data-operation.iam.gserviceaccount.com"])
+            "serviceAccount:cpv-pipeline@prd-utpbi-data-operation.iam.gserviceaccount.com"])
 
     def test_rendered_commands_are_new_scoped_and_parse_as_shell(self):
         files = renderer.render(settings())
@@ -141,14 +141,19 @@ class IsolationTests(unittest.TestCase):
             binary.chmod(0o700)
             log = root / "calls.jsonl"
             env = {**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"], "CPV_TEST_LOG": str(log)}
-            for args, expected_count in (([], 3), (["resume-batch"], 2)):
+            for args, expected_count in (([], 3), (["resume-batch"], 2), (["--roles-only", "resume-batch"], 1)):
                 log.write_text("")
                 subprocess.run(["bash", str(script), *args], env=env, check=True, capture_output=True)
                 calls = [json.loads(line) for line in log.read_text().splitlines()]
                 executions = [x for x in calls if x[:3] == ["run", "jobs", "execute"]]
                 self.assertEqual(len(executions), expected_count)
-                gpu = next(x for x in executions if x[3] == "counter-presencial-vnext-gpu")
-                self.assertIn("--tasks=2", gpu)
+                self.assertTrue(all(x[3] == "counter-presencial-vnext-gpu" for x in executions))
+                modes = [next(x for x in call if x.startswith("--update-env-vars=")) for call in executions]
+                if len(executions) > 1:
+                    worker = next(call for call in executions if any("JOB_ROLE=worker," in x for x in call))
+                    self.assertIn("--tasks=2", worker)
+                else:
+                    self.assertIn("JOB_ROLE=roles,", modes[0])
                 self.assertTrue(all("--project=example-cpv" in x for x in calls))
 
     def test_no_imports_of_the_legacy_project(self):

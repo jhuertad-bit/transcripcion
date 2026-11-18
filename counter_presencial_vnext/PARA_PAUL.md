@@ -1,73 +1,64 @@
-# Primera compilación en PRD
+# Entrega para Paul — workflow original, recursos propios
 
-Destino: `prd-utpbi-data-operation`. Mantener todos nuestros recursos con los
-nombres exclusivos del README. Las cuotas del proyecto sí se comparten.
+## Qué hacer con esta entrega
 
-## 1. Actualizar el código
+1. Descomprimir y reemplazar **solo** `counter_presencial_vnext/` en el repo.
+   Incluir todos los archivos nuevos: hay dos entornos de modelos y sus locks.
+2. Mantener nuestro activador existente apuntando a
+   `counter_presencial_vnext/cloudbuild.yaml`.
+3. Mantener `_SOURCE_DIR=counter_presencial_vnext` y `_REGION=us-central1`.
+4. Hacer push y comprobar un **build nuevo con el commit nuevo**.
 
-Reemplazar solo `counter_presencial_vnext/` con esta entrega. Incluye dos
-correcciones que deben llegar juntas:
+No basta con cambiar la línea de NeMo de la entrega anterior. Llegan juntos
+los Dockerfiles, requirements/constraints, el ejecutor separado de Canary,
+las funciones de SAXO y los ajustes de orquestación.
 
-- `cloudbuild.yaml`: los cuatro pasos usan `dir: '${_SOURCE_DIR}'`.
-- `counter_presencial/isolation.py` y configuración: permiten PRD y siguen
-  rechazando buckets, tablas y modelos fuera de nuestro espacio de recursos.
+## Qué cambió
 
-No cambiar las otras carpetas del repositorio. El YAML corregido por sí solo
-resuelve el import, pero la versión anterior del código rechazaba PRD después.
+Se conserva el esquema de Paul: **un Job con prepare, worker y roles**.
+Nuestro Job es `counter-presencial-vnext-gpu`; no se ejecuta el suyo.
+Las dos imágenes se compilan, pero no hacen falta tres Jobs para el piloto.
 
-## 2. Revisar únicamente nuestro activador
+- Nemotron utiliza el Transformers fijado por SAXO.
+- Canary utiliza NeMo 2.7.3 en otro entorno Python dentro de la misma imagen.
+- Solo un modelo GPU está residente a la vez.
+- Se aplican ventanas de voz, limpieza de bucles y control multihablante de SAXO.
+- Hay checkpoints de diarización y por ventana para reintentos.
+- Gemini conserva el diálogo completo, fusión y segunda revisión.
 
-Se puede conservar el nombre existente `deploy-counter-presencial-vnext`.
-No hace falta crear un segundo activador si ese ya es exclusivo de esta carpeta.
+La atribución contextual sigue el contrato de las ramas de SAXO: intervenciones
+formadas con palabras, pausas y puntuación; Gemini sustituye a JEV para atribuir
+cada una usando el diálogo completo. No se impone un rol fijo por voz. Las
+funciones de segmentación se copiaron del fuente y se compararon directamente.
 
-| Ajuste | Valor |
-|---|---|
-| Repositorio | `jhuertad-bit/transcripcion` |
-| Rama | `main` |
-| Archivo de configuración | `counter_presencial_vnext/cloudbuild.yaml` |
-| Filtro de archivos incluidos | `counter_presencial_vnext/**` |
-| Sustitución `_SOURCE_DIR` | `counter_presencial_vnext` |
-| Sustitución `_REGION` | `us-central1` |
-| Cuenta de compilación propuesta | `cpv-build@prd-utpbi-data-operation.iam.gserviceaccount.com` |
+## Después del build
 
-La cuenta de compilación se selecciona en la configuración del activador: no es
-una sustitución `_SERVICE_ACCOUNT`. Debe existir y tener los permisos descritos
-en el README. También debe existir nuestro repositorio Docker de Artifact Registry
-`counter-presencial-vnext` en `us-central1`, con acceso de escritura para esa cuenta.
-El código no los crea durante el build.
+El activador **solo compila**. Antes de probar hay que revisar o crear nuestros
+recursos, configurar Gemini y completar los commits de los pesos en
+`deployment.local.json`. El README contiene el orden y el generador.
 
-`$PROJECT_ID` y `$BUILD_ID` los proporciona Cloud Build. Este YAML no lee
-`_LOCATION`, `_REPOSITORY`, `_BQ_LOCATION`, `_JOB_NAME`, `_SERVICE_ACCOUNT`,
-`_FIRESTORE_SECRET`, `_ENABLE_SCHEDULER`, `_SCHEDULE`, `_SCHEDULER_NAME`,
-`_TIME_ZONE`, `_WORKFLOW_NAME` ni `_WORKFLOW_SERVICE_ACCOUNT`.
-No copiar nombres o cuentas de otros procesos. No modificar sus activadores.
+Si ya existe una carpeta `generated/` anterior, conservarla aparte antes de
+generar la nueva: los scripts anteriores contemplaban tres Jobs. Esta entrega
+genera **uno** con la cuenta nueva `cpv-pipeline`; no elimina recursos anteriores.
 
-Guardar la configuración y ejecutar un build sobre el commit nuevo de `main`.
-Reintentar el commit antiguo `1faf1c6` no incorpora los archivos corregidos.
-Comprobar un ID de build nuevo; `fa42f474-6784-4cde-a967-073fda99ef73` es el fallo
-anterior. La selección del YAML no cambia por sí sola el directorio de trabajo.
+El perfil inicial usa 1 L4, 8 CPU, 32 GiB, paralelismo 1 y un máximo de tres
+conversaciones por lote. Requiere cuota disponible y los permisos propios.
+La configuración de CPU/memoria respeta la tabla de Cloud Run Jobs:
+https://docs.cloud.google.com/run/docs/configuring/jobs/cpu
 
-## 3. Después de compilar
+Después de crear el Job e introducir audios y catálogo propios:
 
-Este activador construye y publica dos imágenes. No crea ni ejecuta los Jobs.
-Seguir el README para preparar los recursos propios y crear:
+```bash
+bash generated/run_manual.sh
+```
 
-- `counter-presencial-vnext-prepare`
-- `counter-presencial-vnext-gpu`
-- `counter-presencial-vnext-roles`
+Usa el mismo contrato JOB_ROLE de su workflow. Si una etapa falla, el comando
+devuelve error. Para reintentar el lote, pasar su ID; para repetir únicamente
+roles, usar `--roles-only ID_DEL_LOTE`.
 
-La configuración de ejecución está en `deployment.local.json` y los archivos
-que genera `scripts/render_deployment.py`; no se añade al activador. Antes de
-crearlos hay que completar las revisiones inmutables de Canary y Nemotron,
-el endpoint Gemini habilitado en PRD, y las fechas de la prueba. Confirmar cuota
-L4 en `us-central1`, preparar las cuentas/permisos nuevos y copiar algunos audios
-completos y sus metadatos al bucket y catálogo propios.
+## Qué está validado y qué falta
 
-No ejecutar `bootstrap.sh` a ciegas si ya se crearon recursos: se detiene cuando
-un nombre existe. Revisar lo existente antes de continuar. La primera prueba
-se lanza con `bash generated/run_manual.sh`, una vez creados los tres Jobs.
-
-## Validación de esta entrega
-
-Pruebas offline y comprobación local de los pasos Python y rutas Docker.
-Esto no confirma todavía un build Docker en GCP ni ejecución de modelos/Gemini.
+Las pruebas offline, instalaciones limpias y los imports se verifican antes
+de entregar. Los checks de imagen no descargan pesos ni llaman a Gemini.
+Falta confirmar la compilación Docker en GCP y el primer audio en L4; no hay
+una garantía de cero errores de infraestructura, permisos o calidad.

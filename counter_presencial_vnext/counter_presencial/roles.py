@@ -161,4 +161,7 @@ def classify(turns, provider, redact, config, checkpoint=None):
                      else "unresolved", "role_requires_review": final == "INCIERTO",
                      "requires_review": final == "INCIERTO" or bool(original.get("source_quality_review")),
                      "initial_decision": decision, "evidence_turn_ids": decision["evidence_turn_ids"]})
-    return {"turns": rows, "safe_turns": safe, "calls": calls, "prompt_version": PROMPT_VERSION}
+    return {"turns": rows, "safe_turns": safe, "calls": calls, "prompt_version": PROMPT_VERSION,
+            "attribution_method": "text_context_only", "context_strategy": "whole_dialogue",
+            "speaker_identity_verified": False,
+            "candidate_segmentation": "saxo_word_pause_punctuation_v1"}

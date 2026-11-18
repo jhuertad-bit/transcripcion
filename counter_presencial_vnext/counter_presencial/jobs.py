@@ -1,4 +1,4 @@
-"""Three independently resumable jobs; JSON artifacts are the source of truth."""
+"""Independently resumable modes of one Job; JSON artifacts are the source of truth."""
 from datetime import date
 import json
 import logging
@@ -159,8 +159,19 @@ def run_acoustic(item, config, store, models):
         if previous is not None:
             return previous
         attempt = uuid.uuid4().hex
+        def checkpoint(action, name, value):
+            path = f"acoustic/{key}/checkpoints/{name}.json"
+            if action == "get":
+                saved = store.read(path)
+                if saved is None:
+                    return None
+                if not isinstance(saved, dict) or saved.get("sha256") != digest(saved.get("value")):
+                    raise ValueError("Acoustic checkpoint integrity failure")
+                return saved["value"]
+            check()
+            return store.put(path, {"value": value, "sha256": digest(value)})
         with tempfile.TemporaryDirectory(prefix="counter-presencial-") as folder:
-            result = process_audio(item, config, store, models, Path(folder))
+            result = process_audio(item, config, store, models, Path(folder), checkpoint)
         result.update(acoustic_key=key, attempt_id=attempt)
         publish_stage(store, "acoustic", key, result, attempt, check)
         return result
@@ -192,7 +203,8 @@ def run_roles(item, acoustic, config, store, provider, redactor):
                       redaction_version=REDACTION_VERSION, elapsed_seconds=time.monotonic() - started,
                       source_parts=acoustic["source_parts"], duration_seconds=acoustic["duration_seconds"],
                       speaker_scope="conversation", timestamp_scope="conversation",
-                      execution_status="completed", review_status="review_required" if any(
+                      execution_status="skipped" if acoustic.get("skip_reason") else "completed",
+                      skip_reason=acoustic.get("skip_reason"), review_status="review_required" if any(
                           t["requires_review"] for t in result["turns"]) or acoustic["quality_status"] ==
                       "review_required" else "unvalidated", attempt_id=attempt)
         result["serialized_level_1"] = "\n".join(

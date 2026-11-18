@@ -1,15 +1,28 @@
-"""Explicit entry point for isolated prepare / acoustic / roles CPU-GPU jobs."""
+"""Paul's JOB_ROLE contract on our independent Job; worker uses isolated models."""
 import argparse
 import logging
+import os
+
+
+def resolve_stage(argument=None, environment=None):
+    env = os.environ if environment is None else environment
+    aliases = {"prepare": "prepare", "worker": "acoustic", "acoustic": "acoustic", "roles": "roles"}
+    role = env.get("JOB_ROLE")
+    if role is not None and role not in aliases:
+        raise ValueError("Unknown JOB_ROLE")
+    if argument is not None and argument not in aliases:
+        raise ValueError("Unknown Presencial stage")
+    if argument and role and aliases[argument] != aliases[role]:
+        raise ValueError("CLI stage conflicts with JOB_ROLE")
+    return aliases[argument or role or "worker"]
 
 
 def main(stage=None):
     if stage is None:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("stage", choices=("prepare", "acoustic", "roles"))
+        parser.add_argument("stage", nargs="?", choices=("prepare", "worker", "acoustic", "roles"))
         stage = parser.parse_args().stage
-    if stage not in ("prepare", "acoustic", "roles"):
-        raise ValueError("Unknown Presencial stage")
+    stage = resolve_stage(stage)
     from google.cloud import bigquery, storage
     from counter_presencial.config import Config
     from counter_presencial.storage import Store
@@ -24,7 +37,10 @@ def main(stage=None):
     items = manifest_items(config, store, storage_client, sharded=stage == "acoustic")
     if stage == "acoustic":
         models = Models(config)
-        failures = run_batch(items, stage, lambda item: run_acoustic(item, config, store, models), store)
+        try:
+            failures = run_batch(items, stage, lambda item: run_acoustic(item, config, store, models), store)
+        finally:
+            models.close()
     else:
         bq = bigquery.Client(project=config.project or None)
         provider = BigQueryGemini(bq, config.role_model, config.bq_location)
@@ -35,10 +51,11 @@ def main(stage=None):
             acoustic = completed(store, "acoustic", item["acoustic_key"])
             if acoustic is None:
                 raise ValueError("Acoustic result pending; retry roles after its successful execution")
-            if redactor is None:
+            if redactor is None and acoustic["transcription"]:
                 redactor = Redactor()
             # Reuse NLP weights, but placeholders do not link people across recordings.
-            result = run_roles(item, acoustic, config, store, provider, redactor.new_conversation())
+            scrub = redactor.new_conversation() if acoustic["transcription"] else (lambda text: text)
+            result = run_roles(item, acoustic, config, store, provider, scrub)
             publish_bigquery(bq, config, result)
             mark_published(item, result, config, store)
 

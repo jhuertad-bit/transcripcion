@@ -1,13 +1,21 @@
-# Candidate profile: build/import/inference validation is required before promotion.
-FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HF_HOME=/tmp/huggingface
+# Same GPU Job, two isolated Python runtimes; no simultaneous GPU model residency.
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04@sha256:ac55d124da4882b497f732d8dfd9a702d5447a5f29d08d56da6f64f0a1eb34bc
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HF_HOME=/tmp/huggingface \
+    PATH=/opt/pipeline/bin:$PATH CANARY_PYTHON=/opt/canary/bin/python
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libsndfile1 \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-venv python3-dev build-essential ffmpeg libsndfile1 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY docker/requirements-gpu.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt && pip check \
-    && python -c "from nemo.collections.asr.models import ASRModel; from transformers import AutoModelForAudioFrameClassification" \
-    && pip freeze > /app/resolved-requirements.txt
+RUN python3 -m venv /opt/pipeline && python3 -m venv /opt/canary
+COPY docker/requirements-*.txt docker/constraints-*.txt /app/docker/
+COPY scripts/check_gpu_runtime.py /app/check_gpu_runtime.py
+RUN /opt/pipeline/bin/pip install --no-cache-dir -r docker/requirements-gpu.txt -c docker/constraints-gpu.txt \
+    && /opt/pipeline/bin/pip check \
+    && /opt/pipeline/bin/python /app/check_gpu_runtime.py pipeline \
+    && /opt/pipeline/bin/pip freeze > /app/resolved-pipeline.txt
+RUN /opt/canary/bin/pip install --no-cache-dir -r docker/requirements-canary.txt -c docker/constraints-canary.txt \
+    && /opt/canary/bin/pip check \
+    && /opt/canary/bin/python /app/check_gpu_runtime.py canary \
+    && /opt/canary/bin/pip freeze > /app/resolved-canary.txt
 COPY counter_presencial/ /app/counter_presencial/
 ENTRYPOINT ["python", "-m", "counter_presencial.main"]
-CMD ["acoustic"]

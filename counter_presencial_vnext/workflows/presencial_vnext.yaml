@@ -1,110 +1,108 @@
-# Separate workflow. Requires three independently configured jobs, never the legacy JOB_NAME.
+# Same orchestration contract as Paul; JOB_NAME points only to our independent Job.
 main:
   params: [args]
   steps:
     - init:
         assign:
           - project: ${sys.get_env("PROJECT_ID")}
-          - region: ${sys.get_env("LOCATION")}
-          - gpu_region: ${sys.get_env("GPU_LOCATION")}
-          - prepare_job: counter-presencial-vnext-prepare
-          - acoustic_job: counter-presencial-vnext-gpu
-          - roles_job: counter-presencial-vnext-roles
-          - root: ${sys.get_env("PRESENCIAL_OUTPUT_GCS_ROOT")}
+          - location: ${sys.get_env("LOCATION")}
+          - job: ${sys.get_env("JOB_NAME")}
+          - root: ${sys.get_env("MANIFEST_GCS_ROOT")}
           - batch: ${sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
-          - acoustic_failed: false
-          - roles_failed: false
-    - mode:
+    - validate_target:
+        switch:
+          - condition: ${job != "counter-presencial-vnext-gpu"}
+            next: invalid_target
+        next: roles_resume
+    - invalid_target:
+        raise: 'JOB_NAME must be counter-presencial-vnext-gpu; refusing a different Job'
+    - roles_resume:
         switch:
           - condition: ${map.get(args, "roles_only") == true}
-            next: resume
+            next: resume_manifest
         next: prepare
-    - resume:
+    - resume_manifest:
         assign:
           - uri: ${args.manifest_uri}
-        next: roles
+        next: classify_roles
     - prepare:
         call: googleapis.run.v2.projects.locations.jobs.run
         args:
-          name: ${"projects/" + project + "/locations/" + region + "/jobs/" + prepare_job}
+          name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job}
           body:
             overrides:
               taskCount: 1
               containerOverrides:
                 - env:
+                    - name: JOB_ROLE
+                      value: prepare
                     - name: BATCH_ID
                       value: ${batch}
           connector_params:
-            timeout: 3600
-    - manifest:
+            timeout: 14400
+    - manifest_path:
         assign:
-          - uri: ${root + "/manifests/" + batch + ".json"}
+          - uri: ${root + "/" + batch + ".json"}
           - parts: ${text.split(text.substring(uri, 5, len(uri)), "/")}
           - bucket: ${parts[0]}
           - object: ${text.substring(uri, 6 + len(bucket), len(uri))}
-    - count:
+    - read_manifest:
         call: http.get
         args:
           url: ${"https://storage.googleapis.com/storage/v1/b/" + bucket + "/o/" + text.url_encode(object + ".meta.json") + "?alt=media"}
           auth:
             type: OAuth2
-        result: metadata
+        result: manifest
     - empty:
         switch:
-          - condition: ${metadata.body.count == 0}
+          - condition: ${manifest.body.count == 0}
             return:
-              status: no_ready_conversations
-              needs_source_review: ${metadata.body.source_review_count}
+              status: no_pending_files
               manifest_uri: ${uri}
-    - acoustic:
-        try:
-          call: googleapis.run.v2.projects.locations.jobs.run
-          args:
-            name: ${"projects/" + project + "/locations/" + gpu_region + "/jobs/" + acoustic_job}
-            body:
-              overrides:
-                taskCount: ${metadata.body.task_count}
-                containerOverrides:
-                  - env:
-                      - name: MANIFEST_URI
-                        value: ${uri}
-            connector_params:
-              timeout: 86400
-        except:
-          as: acoustic_error
-          steps:
-            - mark_acoustic_failure:
-                assign:
-                  - acoustic_failed: true
-    - roles:
-        try:
-          call: googleapis.run.v2.projects.locations.jobs.run
-          args:
-            name: ${"projects/" + project + "/locations/" + region + "/jobs/" + roles_job}
-            body:
-              overrides:
-                taskCount: 1
-                containerOverrides:
-                  - env:
-                      - name: MANIFEST_URI
-                        value: ${uri}
-            connector_params:
-              timeout: 86400
-        except:
-          as: roles_error
-          steps:
-            - mark_roles_failure:
-                assign:
-                  - roles_failed: true
-    - partial:
+    - worker:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job}
+          body:
+            overrides:
+              taskCount: ${manifest.body.task_count}
+              containerOverrides:
+                - env:
+                    - name: JOB_ROLE
+                      value: worker
+                    - name: MANIFEST_URI
+                      value: ${uri}
+          connector_params:
+            timeout: 86400
+        result: execution
+    - roles_enabled:
         switch:
-          - condition: ${acoustic_failed or roles_failed}
-            raise:
-              message: Partial VNext execution; completed conversations are preserved
-              manifest_uri: ${uri}
-              acoustic_failed: ${acoustic_failed}
-              roles_failed: ${roles_failed}
+          - condition: ${sys.get_env("ROLE_ENABLED") == "true"}
+            next: classify_roles
+        next: done
+    - classify_roles:
+        call: googleapis.run.v2.projects.locations.jobs.run
+        args:
+          name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job}
+          body:
+            overrides:
+              taskCount: 1
+              containerOverrides:
+                - env:
+                    - name: JOB_ROLE
+                      value: roles
+                    - name: MANIFEST_URI
+                      value: ${uri}
+          connector_params:
+            timeout: 86400
+        result: role_execution
+        next: roles_done
+    - roles_done:
+        return:
+          status: roles_completed
+          manifest_uri: ${uri}
     - done:
         return:
-          status: stages_completed_quality_unvalidated
           manifest_uri: ${uri}
+          count: ${manifest.body.count}
+          execution: ${execution}

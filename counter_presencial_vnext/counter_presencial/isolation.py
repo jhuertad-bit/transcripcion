@@ -28,7 +28,7 @@ class Resources:
         return f"{self.project}.{DATASET}.{name}"
 
     def account(self, stage):
-        if stage not in ("prepare", "gpu", "roles", "build", "workflow", "operator"):
+        if stage not in ("pipeline", "prepare", "gpu", "roles", "build", "workflow", "operator"):
             raise ValueError("Unknown service account")
         return f"cpv-{stage}@{self.project}.iam.gserviceaccount.com"
 
@@ -39,7 +39,8 @@ class Resources:
     def inventory(self):
         return {
             "project": self.project,
-            "jobs": {stage: PREFIX + "-" + stage for stage in ("prepare", "gpu", "roles")},
+            "jobs": {"pipeline": PREFIX + "-gpu"},
+            "job_roles": ["prepare", "worker", "roles"],
             "workflow": PREFIX,
             "trigger": PREFIX + "-build",
             "artifact_repository": PREFIX,
@@ -52,7 +53,7 @@ class Resources:
             "remote_model": self.table("gemini_roles_vnext"),
             "connection": PREFIX + "-gemini",
             "service_accounts": {k: self.account(k) for k in
-                                 ("prepare", "gpu", "roles", "build", "workflow", "operator")},
+                                 ("pipeline", "build", "workflow", "operator")},
             "scheduler": "disabled; manual Cloud Shell execution only",
             "eventarc_pubsub": "unused; no shared audio events",
             "secrets": "none required; optional future secrets must belong to this project",
@@ -64,6 +65,7 @@ class Resources:
             "GOOGLE_CLOUD_PROJECT": self.project,
             "ALLOWED_INPUT_BUCKETS": self.bucket("input"),
             "PRESENCIAL_OUTPUT_GCS_ROOT": self.output_root,
+            "MANIFEST_GCS_ROOT": self.output_root + "/manifests",
             "BQ_SOURCE_TABLE": self.table("catalog_vnext"),
             "PRESENCIAL_ROLE_MODEL": self.table("gemini_roles_vnext"),
             "PRESENCIAL_BQ_RESULTS_TABLE": self.table("counter_presencial_resultados_vnext"),
